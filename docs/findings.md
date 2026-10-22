@@ -51,6 +51,7 @@ Doğrulama durumu:
 | F-28 | 🟡 | `chat:join` için hız sınırı yok |
 | F-29 | 🔵 | Kanal ya da sunucu silinince socket'ler odalarda kalıyor |
 | F-30 | 🔵 | Mesaj handler'ları oda adını veritabanı satırından değil query'den alıyor |
+| F-31 | 🔵 | ~~`/home` sayfası `async` tanımlı bir Client Component~~ (Paket 4 sonrası düzeltildi) |
 
 ---
 
@@ -307,3 +308,13 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
 - **Etki:** Yok; ileride sorgu değişirse oda ile olay anahtarı ayrışabilir.
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 10 (girdi doğrulaması, aynı handler'lar). `channel.id` / `conversation.id` kullanılmalı.
+
+### F-31: `/home` sayfası `async` tanımlı bir Client Component
+- **Yer:** `app/(home)/home/page.tsx:1, 15`
+- **Kanıt:**
+  - Dosya `"use client"` ile başlıyor ve `const HomePage = async () => {...}` olarak tanımlı. Bileşen JSX yerine Promise döndürüyor.
+  - React bu Promise'i her render'da yeniden görüyor ve tarayıcıda "A component was suspended by an uncached promise..." ile "async/await is not yet supported in Client Components..." hatalarını basıyor.
+  - `currentUser`, `db`, `fs` gibi sunucuya özgü import'lar ve başka kullanılmayan import'lar var; sayfa hiçbirini kullanmıyor.
+  - `fad47e6` (2025-01-28) commit'inde `"use client"` eklendiğinden beri var. Paket 4'teki SSR hatası (`08ad1bc` ile düzeltildi) sayfanın render edilmesini engellediği için o sırada görünmüyordu.
+- **Etki:** Geliştirme ortamında konsol hatası ve gereksiz yeniden render. Sayfa içeriği yine de gösteriliyor.
+- **Durum:** Kodda doğrulandı, testte yeniden üretildi. Düzeltildi: `async` ve kullanılmayan import'lar kaldırıldı (`tests/app/home-page.test.tsx`).

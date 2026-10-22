@@ -1,18 +1,10 @@
 "use client"
-import { currentUser } from "@clerk/nextjs/server"
-import { db } from "@/lib/db"
-import { read } from "fs";
 import { redirect } from "next/navigation";
-import { InitialModal } from "@/components/modals/initial-modal";
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
-import Head from "next/head";
 import { ModeToggle } from "@/components/mode-toggle";
-import { useEffect, useState } from "react";
-import { ActionTooltip } from "@/components/action-tooltip";
-import { ArrowBigDownDashIcon, ArrowDown, ArrowDownNarrowWide } from "lucide-react";
 import { HelpSection } from "@/components/home/help-section";
 
-const HomePage = async () => {
+const HomePage = () => {
 
     const onClick = () => {
         redirect("/");

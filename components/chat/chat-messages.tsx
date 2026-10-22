@@ -64,7 +64,8 @@ export const ChatMessages = ({
         paramKey: paramKey,
         paramValue: paramValue
     }).then((e) => {
-        let { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } = e
+        const { data, status } = e
+        let { fetchNextPage, hasNextPage, isFetchingNextPage } = e
         fetchNextPage = fetchNextPage, hasNextPage = hasNextPage, isFetchingNextPage = isFetchingNextPage
         setData(data)
         setStatus(status)

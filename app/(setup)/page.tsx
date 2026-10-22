@@ -11,7 +11,6 @@ const SetupPage = async () => {
         where: {
             members: {
                 some: {
-                    //@ts-ignore
                     profileId: profile.id
                 }
             }

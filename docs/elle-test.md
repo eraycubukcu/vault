@@ -31,3 +31,35 @@ Otomatik testlerin kapsamadığı, canlı Clerk + MongoDB (ve gerektiğinde ikin
    - A ve B için aynı adres → **200**.
 6. Aynı sunucuda kanal ve özel sohbet ekranları hem A'da hem B'de normal yüklenmeli (mesaj geçmişi görünmeli).
 7. A, B'yi sunucudan atsın. B'nin açık kanal sekmesi en geç bir dakika içinde yeniden çekmeyi denediğinde 403 almalı (Ağ sekmesinde görünür). Arayüzün hata durumuna düşmesi beklenen davranıştır; düzeltmesi F-22 kapsamında Görev 8'de.
+
+---
+
+## Paket 4 — Socket kimlik doğrulama ve sohbet odaları (Görev 4: F-02; Görev 5'ten öne alınan istemci ve atma/ayrılma kısmı)
+
+**Hazırlık:** `npm run dev`. İki ayrı tarayıcı kullanın (ör. Chrome ve Firefox; ya da bir normal ve bir gizli pencere). Hesaplar: **A** (sunucu sahibi), **B** (üye), **C** (üye değil). C için üçüncü bir tarayıcı profili gerekir; yoksa B'nin tarayıcısında çıkış yapıp C ile girin.
+
+Tarayıcı konsolunda olayları görmek için: React DevTools olmadan socket'e erişim yok. Bu yüzden **Ağ sekmesi → WS → `/api/socket/io` bağlantısı → Mesajlar** görünümünü kullanın. Gelen her olay `42["chat:...",...]` biçiminde görünür.
+
+1. **Token'sız bağlantı reddediliyor:** Çıkış yapılmış bir pencerede `/home` açın → Ağ sekmesinde `/api/socket/io` isteği **hiç açılmamalı** (oturum yokken istemci bağlanmaz). Konsolda `const ws = new WebSocket(`ws://${location.host}/api/socket/io/?EIO=4&transport=websocket`); ws.onmessage = (e) => { console.log(e.data); if (e.data.startsWith("0{")) ws.send("40"); };` çalıştırın → token gönderilmediği için sunucu `44{"message":"unauthorized"}` dönmeli.
+2. **Bağlantı göstergesi:** A ile giriş yapın ve bir kanalı açın → sağ üstteki socket göstergesi "canlı" (yeşil) olmalı. WS mesajlarında giden `42X["chat:join","<kanalId>"]` ve dönen `43X[{"ok":true}]` görülmeli.
+3. **Üye canlı mesaj alıyor:** B, A'nın sunucusuna davet linkiyle katılır. İki tarayıcıda aynı `general` kanalını açın. A bir mesaj yazsın → B'de **yenilemeden** görünmeli. Düzenleme ve silme de B'de anında yansımalı.
+4. **Üye olmayan almıyor:** C ile giriş yapın (A'nın sunucusuna üye değil). C'nin tarayıcısında kendi sunucusunun bir kanalını açın ve WS mesajlarını izleyin. A, `general` kanalına mesaj yazsın → C'nin WS akışında `chat:<A'nın kanalId>:messages` olayı **görünmemeli**.
+5. **İstemcinin "odaya katıl" demesi yetmiyor:** C'nin tarayıcısında konsolu açıp aşağıdakini çalıştırın (`<kanalId>` yerine A'nın `general` kanalının kimliğini yazın):
+   ```js
+   const t = await window.Clerk.session.getToken();
+   const ws = new WebSocket(`ws://${location.host}/api/socket/io/?EIO=4&transport=websocket`);
+   ws.onmessage = (e) => {
+     console.log(e.data);
+     if (e.data === "2") ws.send("3");                                    // ping/pong
+     if (e.data.startsWith("0{")) ws.send("40" + JSON.stringify({ token: t }));
+     if (e.data.startsWith("40{")) ws.send('420["chat:join","<kanalId>"]');
+   };
+   ```
+   → konsolda `430[{"ok":false}]` görülmeli. A kanala mesaj yazsın → bu WebSocket'e `42["chat:<kanalId>:messages",...]` **gelmemeli**. Aynı kodu B'nin tarayıcısında çalıştırırsanız `430[{"ok":true}]` ve A'nın mesajı gelmeli.
+6. **Özel sohbet:** A ile B arasında özel sohbet açın. İki tarafta da mesajlar canlı gelmeli. C'nin WS akışında bu sohbetin olayları görünmemeli.
+7. **Sohbet değiştirme:** B, `general`'dan başka bir kanala geçsin → WS'de `chat:leave` (eski kanal) ve `chat:join` (yeni kanal) görülmeli. A eski kanala mesaj yazınca B'nin WS akışında o kanalın olayı artık görünmemeli.
+8. **Atılan üye (iki sekme):** B'nin tarayıcısında aynı kanalı **iki sekmede**, A ile B'nin özel sohbetini de üçüncü sekmede açın. İsterseniz B'nin bir sekmesinde 5. adımdaki ham WebSocket'i de `chat:join` ile kanala sokun. A, "Kullanıcıları Yönet" menüsünden B'yi atsın, sonra kanala mesaj yazsın → B'nin **hiçbir sekmesinde** (ham WebSocket dahil) `chat:<kanalId>:messages` olayı görünmemeli. Özel sohbet atma ile birlikte silindiği için ona yeni mesaj yazılamaz. (Mesaj geçmişi isteklerinin 403'e düşüp arayüzde hata görünmesi F-22, Görev 8.)
+9. **Ayrılan üye:** B'yi tekrar davet edin, kanalı açsın. B sunucu menüsünden "Sunucudan Ayrıl" yapsın; B'nin ikinci bir sekmesi aynı kanalda açık kalsın. A kanala yazsın → B'nin açık kalan sekmesine olay gelmemeli.
+10. **Ağ kesintisi ve yeniden bağlanma:** B kanaldayken `npm run dev` sürecini durdurup 5 saniye sonra yeniden başlatın (Chrome'un "Çevrimdışı" ayarı açık WebSocket'i her sürümde koparmaz) → gösterge önce kırmızı sonra yeşil olmalı; WS'de yeni bağlantıda tekrar `chat:join` görülmeli. A'nın yazdığı yeni mesaj B'ye canlı gelmeli.
+11. **Uzun oturum (token yenileme):** B'nin sekmesini 2 dakikadan uzun açık bırakın (Clerk token'ı ~60 sn geçerli), sonra 10. adımdaki gibi sunucuyu yeniden başlatın → yeniden bağlanma başarılı olmalı (taze token alınır). Sunucu konsolunda `unauthorized` hatası görülmemeli.
+12. **Ses/görüntü kanalları etkilenmemeli:** Bir AUDIO kanalına girin → LiveKit odası eskisi gibi açılmalı (bu paket LiveKit'e dokunmuyor).

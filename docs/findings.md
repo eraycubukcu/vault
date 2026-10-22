@@ -41,10 +41,16 @@ Doğrulama durumu:
 | F-18 | 🔵 | Ölü kod ve küçük hatalar |
 | F-19 | 🔵 | Arayüz dili tutarsız |
 | F-20 | 🔵 | Dokümantasyon ve yapılandırma eksikleri |
-| F-21 | 🔵 | Sohbet erişim sorgusundaki `OR` koşulu tek başına test edilmiyor |
+| F-21 | 🔵 | ~~Sohbet erişim sorgusundaki `OR` koşulu tek başına test edilmiyor~~ (Görev 4'te kapandı) |
 | F-22 | 🟡 | `useChatQuery` 403 yanıtını JSON olarak okumaya çalışıyor |
-| F-23 | 🔵 | `canAccessChat` sohbet kimliği için önce boşuna kanal sorgusu yapıyor |
+| F-23 | 🔵 | ~~`canAccessChat` sohbet kimliği için önce boşuna kanal sorgusu yapıyor~~ (Görev 4'te kapandı) |
 | F-24 | 🔵 | Başka bir sohbete ait cursor sayfadan mesaj düşürebiliyor |
+| F-25 | 🟡 | Socket kimliği yalnızca bağlanırken doğrulanıyor; hesap değişince socket eski profilde kalıyor |
+| F-26 | 🔵 | Socket token doğrulamasında `authorizedParties` (azp) kontrolü yok |
+| F-27 | 🔵 | Üye atma/ayrılma, yetki kontrolünden önce ek okuma sorguları çalıştırıyor |
+| F-28 | 🟡 | `chat:join` için hız sınırı yok |
+| F-29 | 🔵 | Kanal ya da sunucu silinince socket'ler odalarda kalıyor |
+| F-30 | 🔵 | Mesaj handler'ları oda adını veritabanı satırından değil query'den alıyor |
 
 ---
 
@@ -230,6 +236,7 @@ Aşağıdaki maddeler Görev 3'ün (F-01) bağımsız incelemesinde bulundu. Hi�
 - **Etki:** Bugün güvenlik açığı yok. Ancak iki katmandan biri kaldırılırsa testler bunu fark etmez; savunma tek katmana düşer.
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 4 (`canAccessChat`'in ilk tüketicisi; erişim testleri orada genişletilecek). `db.conversation.findFirst` çağrısının `OR` koşuluyla yapıldığını doğrulayan bir test eklenmeli.
+- **Kapandı (Görev 4):** `tests/lib/auth/access.test.ts` içinde `where.OR` koşulunu doğrulayan test eklendi; `OR` silinince testin düştüğü doğrulandı.
 
 ### F-22: `useChatQuery` 403 yanıtını JSON olarak okumaya çalışıyor
 - **Yer:** `hooks/use-chat-query.ts:29-30`
@@ -244,6 +251,7 @@ Aşağıdaki maddeler Görev 3'ün (F-01) bağımsız incelemesinde bulundu. Hi�
 - **Etki:** Socket odasına her katılma denetiminde bir ek veritabanı turu. Performans etkisi küçük.
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 4 (socket handshake ve oda katılımı `canAccessChat`'i kullanacak). İki sorgu paralel çalıştırılabilir ya da istemci sohbet türünü bildirebilir.
+- **Kapandı (Görev 4):** İki sorgu `Promise.all` ile paralel çalışıyor. Bekleme süresi kısaldı, ancak kanal kimliklerinde de sohbet sorgusu çalıştığı için toplam sorgu sayısı 2'den 3'e çıktı. İstemcinin sohbet türünü bildirmesi ileride bu maliyeti kaldırabilir.
 
 ### F-24: Başka bir sohbete ait cursor sayfadan mesaj düşürebiliyor
 - **Yer:** `app/api/messages/route.ts`, `app/api/direct-messages/route.ts` (cursor dalı, `skip: 1`)
@@ -251,3 +259,51 @@ Aşağıdaki maddeler Görev 3'ün (F-01) bağımsız incelemesinde bulundu. Hi�
 - **Etki:** Güvenlik sorunu değil; kurcalanmış istekte sayfalama tutarsızlığı.
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 8 (sayfalama). Görev 8'in dosya listesine iki geçmiş route'u eklenmeli; cursor'ın aynı sohbete ait olduğu doğrulanmalı, değilse 400 dönülmeli.
+
+---
+
+## Sonradan eklenenler (Paket 4 bağımsız incelemesi)
+
+Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi sırasında bulundu. İncelemedeki Critical bulgu (yetki kontrolü sürerken atılan kullanıcının odaya geri girmesi) ve oda katılma/ayrılma yarışı Görev 4 içinde düzeltildi. Aşağıdakiler ertelendi.
+
+### F-25: Socket kimliği yalnızca bağlanırken doğrulanıyor; hesap değişince socket eski profilde kalıyor
+- **Yer:** `lib/socket/auth.ts`, `components/ui/providers/socket-provider.tsx` (effect bağımlılığı `isSignedIn`)
+- **Kanıt:** Token yalnızca handshake sırasında doğrulanıyor. Oturum iptal edilse (başka cihazdan çıkış) ya da profil silinse bile açık socket, daha önce katıldığı odaların olaylarını almaya devam ediyor. Clerk çoklu oturum açıksa hesap değiştirmede `isSignedIn` `true` kaldığı için socket eski profille kalıyor; yeni hesabın `chat:join` istekleri sessizce `ok:false` dönüyor.
+- **Etki:** Oturumu kapatılmış bir cihaz, socket kopana kadar yetkili olduğu sohbetleri dinlemeye devam eder. Hesap değiştirince canlı mesajlar gelmez.
+- **Durum:** Kodda doğrulandı (çoklu oturum kısmı çalıştırılarak doğrulanacak).
+- **Ele alınacağı görev:** Görev 5. Effect `userId`/`sessionId`'ye bağlanmalı. Sunucu tarafında belirli aralıklarla ya da `chat:join` sırasında token süresi kontrol edilip socket koparılabilir.
+
+### F-26: Socket token doğrulamasında `authorizedParties` (azp) kontrolü yok
+- **Yer:** `lib/socket/auth.ts` (`verifyToken` çağrısı)
+- **Kanıt:** `verifyToken` yalnızca `secretKey` ile çağrılıyor. Aynı Clerk örneğini paylaşan başka bir origin için üretilmiş token'lar da kabul ediliyor.
+- **Etki:** Aynı Clerk uygulamasını kullanan başka bir ön yüzden alınan token socket'e bağlanmak için kullanılabilir. Tek origin'li bugünkü kurulumda risk düşük.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 14 (yapılandırma). `authorizedParties: [process.env.NEXT_PUBLIC_SITE_URL]` eklenmeli; `dev2` (https) ve üretim origin'leri birlikte düşünülmeli.
+
+### F-27: Üye atma/ayrılma, yetki kontrolünden önce ek okuma sorguları çalıştırıyor
+- **Yer:** `app/api/members/[memberId]/route.ts` (DELETE), `app/api/servers/[serverId]/leave/route.ts`
+- **Kanıt:** Odadan çıkarılacak sohbetleri bulmak için `member.findFirst` ve `getMemberChatIds` (iki `findMany`) silmeden önce çalışıyor. Sahiplik kontrolü ise sonraki `server.update` `where`'inde. Giriş yapmış herhangi bir kullanıcı bu okumaları tetikleyebiliyor; veri sızmıyor.
+- **Etki:** Gereksiz veritabanı yükü.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 12 (hız sınırı) ya da Görev 5 (aynı route'lar). Ön okuma `server: { profileId: profile.id }` koşuluyla sınırlandırılmalı.
+
+### F-28: `chat:join` için hız sınırı yok
+- **Yer:** `lib/socket/server.ts` (`chat:join`)
+- **Kanıt:** Her `chat:join` 4–6 veritabanı sorgusu çalıştırıyor (iki kez `canAccessChat`, her biri paralel iki sorgu). Giriş yapmış bir istemci bu olayı sınırsız gönderebilir.
+- **Etki:** Kötüye kullanımla veritabanı yükü.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 12. Socket başına kayan pencere sınırı veya kısa süreli erişim önbelleği.
+
+### F-29: Kanal ya da sunucu silinince socket'ler odalarda kalıyor
+- **Yer:** `app/api/channels/[channelId]/route.ts` (DELETE), sunucu silme route'u
+- **Kanıt:** Görev 4 yalnızca üye atma ve sunucudan ayrılmada socket'leri odalardan çıkarıyor. Silinen kanalın ya da sunucunun odalarında socket'ler kalıyor. Yeni mesaj yazılamadığı için veri sızmıyor.
+- **Etki:** Bellekte gereksiz oda üyelikleri.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 5 (kanal silmede `socketsLeave` zaten planlı); sunucu silme de aynı göreve eklenmeli.
+
+### F-30: Mesaj handler'ları oda adını veritabanı satırından değil query'den alıyor
+- **Yer:** `pages/api/socket/messages/index.ts`, `messages/[messageId].ts`, `direct-messages/index.ts`, `direct-messages/[directMessageId].ts`
+- **Kanıt:** `emitToChat(channelId as string, ...)` query değerini kullanıyor. Bugün DB sorgusu aynı değerle filtrelendiği için ikisi her zaman eşit.
+- **Etki:** Yok; ileride sorgu değişirse oda ile olay anahtarı ayrışabilir.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 10 (girdi doğrulaması, aynı handler'lar). `channel.id` / `conversation.id` kullanılmalı.

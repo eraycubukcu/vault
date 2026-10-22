@@ -53,6 +53,11 @@ Doğrulama durumu:
 | F-30 | 🔵 | Mesaj handler'ları oda adını veritabanı satırından değil query'den alıyor |
 | F-31 | 🔵 | ~~`/home` sayfası `async` tanımlı bir Client Component~~ (Paket 4 sonrası düzeltildi) |
 | F-32 | 🔴 | ~~Next, socket'in WebSocket upgrade'ini kapatıyor; `chat:join` sunucuya ulaşmıyor, canlı mesajlar gelmiyor~~ (Paket 4 sonrası düzeltildi) |
+| F-33 | 🔵 | `auth:refresh` sürerken socket koparsa yeniden doğrulama zamanlayıcısı tekrar kuruluyor |
+| F-34 | 🟡 | `auth:refresh` için hız sınırı yok |
+| F-35 | 🔵 | Atma/ayrılmada silinen özel sohbetin karşı tarafı odada kalıyor |
+| F-36 | 🔵 | `getOwnedServerChatIds` tüm üye ID'lerini `$in` listesiyle sorguluyor |
+| F-37 | 🔵 | `SocketProvider`'da paylaşılan `retry` değişkeni bir zamanlayıcıyı kaçırabiliyor |
 
 ---
 
@@ -277,9 +282,10 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
 - **Kapandı (Görev 5):**
   - İstemcideki socket effect'i `userId` ve `sessionId`'ye bağlandı; hesap ya da oturum değişince socket yeniden kuruluyor.
   - İstemci 30 saniyede bir taze token'ı `auth:refresh` ile gönderiyor (`AUTH_REFRESH_INTERVAL_MS`).
-  - Sunucu, aynı profile ait geçerli bir token 120 saniye içinde gelmezse socket'i koparıyor (`REAUTH_TIMEOUT_MS`). Başka bir profile ait token gelirse socket'i hemen koparıyor.
+  - Sunucu, aynı profile ait geçerli bir token 180 saniye içinde gelmezse socket'i koparıyor (`REAUTH_TIMEOUT_MS`). Başka bir profile ait token gelirse socket'i hemen koparıyor.
+  - Sekme görünür olunca istemci beklemeden yeniliyor. 180 saniye, arka plan sekmesinde dakikaya kısılan zamanlayıcıyla bir başarısız yenilemeyi tolere ediyor (bağımsız incelemede M2).
   - Sunucu bağlantıyı kendisi koparınca (`io server disconnect`) istemci 5 saniye sonra taze token ile yeniden deniyor.
-  - Oturumu iptal edilmiş bir cihaz en geç ~2 dakika daha dinleyebilir. Testler: `tests/lib/socket/server.test.ts`, `tests/components/socket-provider.test.tsx`, `tests/integration/socket-rooms.test.ts` (`auth:refresh`).
+  - Oturumu iptal edilmiş bir cihaz bir süre daha dinleyebilir. `verifyToken` ağa gitmeden doğruladığı için, iptal edilen oturumun son token'ı kendi ömrü (~60 sn) boyunca geçerli kalıyor. Bu token'ı tekrar gönderen değiştirilmiş bir istemci için üst sınır ~60 + 180 ≈ 4 dakika; normal istemci token alamadığı için en geç 180 saniyede kopuyor. Testler: `tests/lib/socket/server.test.ts`, `tests/components/socket-provider.test.tsx`, `tests/integration/socket-rooms.test.ts` (`auth:refresh`).
 
 ### F-26: Socket token doğrulamasında `authorizedParties` (azp) kontrolü yok
 - **Yer:** `lib/socket/auth.ts` (`verifyToken` çağrısı)
@@ -294,7 +300,7 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
 - **Etki:** Gereksiz veritabanı yükü.
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 12 (hız sınırı) ya da Görev 5 (aynı route'lar). Ön okuma `server: { profileId: profile.id }` koşuluyla sınırlandırılmalı.
-- **Kısmen kapandı (Görev 5):** Atma isteğinin ön okuması `server: { profileId: profile.id }` ile sahibe sınırlandı; sahibi olmayanın isteği `getMemberChatIds` çalıştırmıyor. Ayrılma isteği yalnızca isteği yapanın kendi üyeliğini okuduğu için bırakıldı. Sunucu sahibinin kendi sunucusundan ayrılma denemesi hâlâ iki `findMany` çalıştırıyor; bu Görev 12'deki hız sınırıyla birlikte ele alınabilir.
+- **Kısmen kapandı (Görev 5):** Atma isteğinin ön okuması `server: { profileId: profile.id }` ile sahibe sınırlandı; sahibi olmayanın isteği `getMemberChatIds` çalıştırmıyor. Ayrılma isteği yalnızca isteği yapanın kendi üyeliğini okuduğu için bırakıldı. Sunucu sahibinin kendi sunucusundan ayrılma denemesi hâlâ `member.findFirst` ve iki `findMany` çalıştırıyor (bağımsız incelemede M1). Düzeltme: ön okumaya `server: { profileId: { not: profile.id } }` eklemek. Görev 12'deki hız sınırıyla birlikte ele alınabilir.
 
 ### F-28: `chat:join` için hız sınırı yok
 - **Yer:** `lib/socket/server.ts` (`chat:join`)
@@ -340,3 +346,50 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
   - d9d224d öncesinde de soket kapatılıyordu; ancak `io.emit` istemciden sunucuya paket gerektirmediği için fark edilmedi.
 - **Etki:** Gerçek zamanlı mesajlar çoğu zaman F5 yapılmadan görünmüyor.
 - **Durum:** Elle testte loglarla doğrulandı. Düzeltildi: Socket.IO route'u olmayan `/api/socket/ws` yolunda dinliyor (`lib/socket/path.ts`); `/api/socket/io` yalnızca sunucuyu başlatıyor ve istemci bağlanmadan önce (ve her yeniden bağlanma denemesinde) bu uca istek atıyor. Yolun bir route ile eşleşmemesi `tests/lib/socket/path.test.ts` ile korunuyor. Elle testte mesajlar yenilemeden geliyor; WebSocket'in 101 ile açık kaldığı (elle-test 13. adım) henüz gözle doğrulanmadı.
+
+---
+
+## Sonradan eklenenler (Paket 5 bağımsız incelemesi)
+
+Görev 5'in (F-25, F-29, F-27'nin atma kısmı) bağımsız incelemesinde kritik ya da önemli bulgu çıkmadı. Bu maddeler bu yüzden ertelendi:
+
+- **Düzeltilen:** İncelemedeki M2 (arka plan sekmesinde tek başarısız yenilemenin bağlantıyı düşürmesi) önemli olarak yeniden derecelendirildi ve Görev 5 içinde düzeltildi.
+- **Yeni madde açılmayanlar:** M1 F-27'ye, M4 (belgelenen dinleme süresi) F-25'in kapanış notuna işlendi.
+
+### F-33: `auth:refresh` sürerken socket koparsa yeniden doğrulama zamanlayıcısı tekrar kuruluyor
+- **Yer:** `lib/socket/server.ts` (`auth:refresh` → `armReauth()`)
+- **Kanıt:** `profileIdFromToken` beklenirken socket koparsa, `disconnect` dinleyicisi zamanlayıcıyı zaten temizlemiş oluyor. Ardından `armReauth()` yeni bir 180 saniyelik zamanlayıcı kuruyor.
+- **Etki:** Socket nesnesi bu süre boyunca bellekte kalıyor; süre dolunca `disconnect(true)` boşa çalışıyor. Bağlantılar sık kurulup koptukça artık zamanlayıcılar birikiyor.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 12 (aynı handler'a hız sınırı eklenecek). `armReauth()` öncesine `if (!socket.connected) return;` eklenmeli ve bu yarış için test yazılmalı.
+
+### F-34: `auth:refresh` için hız sınırı yok
+- **Yer:** `lib/socket/server.ts` (`auth:refresh`)
+- **Kanıt:** Bağlı bir istemci olayı sınırsız gönderebiliyor.
+  - Her geçerli token bir `profile.findUnique` sorgusu çalıştırıyor.
+  - Bilinmeyen `kid` taşıyan bir token, `@clerk/backend` JWKS önbelleğini atlayıp Clerk Backend API'ye istek yaptırıyor.
+- **Etki:** Veritabanı yükü; uygulamanın Clerk API hız limitinin tüketilmesi. Aynı yüzey handshake'te ve `chat:join`'de (F-28) zaten var; bu olay, yeniden bağlanma maliyeti olmadan çalışan sınırsız bir yol ekliyor.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 12 (F-28 ile birlikte). Socket başına sınır konmalı (ör. 10 saniyede 1 yenileme; fazlası yok sayılır).
+
+### F-35: Atma/ayrılmada silinen özel sohbetin karşı tarafı odada kalıyor
+- **Yer:** `app/api/members/[memberId]/route.ts` (DELETE), `app/api/servers/[serverId]/leave/route.ts`
+- **Kanıt:** `Member` silinince `Conversation` cascade ile siliniyor, ama `leaveServerRooms` yalnızca atılan ya da ayrılan profilin socket'lerini çıkarıyor. Karşı tarafın socket'leri artık var olmayan sohbetin odasında kalıyor.
+- **Etki:** F-29 ile aynı: bellekte gereksiz oda üyeliği, veri sızıntısı yok.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 9 (özel sohbet akışları) ya da Görev 12. Özel sohbet ID'leri için ayrıca `closeChatRooms` çağrılmalı.
+
+### F-36: `getOwnedServerChatIds` tüm üye ID'lerini `$in` listesiyle sorguluyor
+- **Yer:** `lib/auth/access.ts` (`getOwnedServerChatIds`)
+- **Kanıt:** Sunucunun tüm üye ID'leri belleğe alınıp büyük bir `$in` listesiyle `conversation.findMany` çalıştırılıyor.
+- **Etki:** Silme işlemi nadir olduğundan düşük; çok büyük sunucuda yavaş sorgu.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 15 (indeksler). Bir sohbetin iki üyesi aynı sunucuda olduğundan `where: { memberOne: { serverId } }` yeterli. Bunun Prisma/Mongo'da ilişki filtresi olarak verimli çalıştığı doğrulanmalı.
+
+### F-37: `SocketProvider`'da paylaşılan `retry` değişkeni bir zamanlayıcıyı kaçırabiliyor
+- **Yer:** `components/ui/providers/socket-provider.tsx` (`disconnect` ve `connect_error` dinleyicileri)
+- **Kanıt:** İki dinleyici de aynı `retry` değişkenine yazıyor. İkisi art arda tetiklenirse ilk zamanlayıcının tutamacı kayboluyor ve temizlikte iptal edilmiyor.
+- **Etki:** `start` içindeki `cancelled` kontrolü bağlanmayı engellediği için zararı, unmount sonrasında yapılan bir boş `fetch` isteği.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 14 ya da socket istemcisine dokunan ilk görev. Yeni zamanlayıcı kurmadan önce `clearTimeout(retry)` çağrılmalı.
+

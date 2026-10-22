@@ -106,7 +106,7 @@ const SocketConnection = ({setSocket,setIsConnected}:{
 
         // F-25: sunucu kimliği düzenli olarak yeniden doğrular; token alınamazsa (oturum
         // kapatılmış) null gönderilir ve sunucu süre dolunca socket'i koparır.
-        const refresh=setInterval(()=>{
+        const refreshAuth=()=>{
             if(!socketInstance.connected){
                 return;
             }
@@ -116,7 +116,15 @@ const SocketConnection = ({setSocket,setIsConnected}:{
                 }
             }
             getTokenRef.current().then(send,()=>send(null))
-        },AUTH_REFRESH_INTERVAL_MS)
+        }
+        const refresh=setInterval(refreshAuth,AUTH_REFRESH_INTERVAL_MS)
+        // Arka planda kısılan zamanlayıcıyı beklemeden, sekme görünür olunca hemen yenile.
+        const onVisible=()=>{
+            if(document.visibilityState==="visible"){
+                refreshAuth()
+            }
+        }
+        document.addEventListener("visibilitychange",onVisible)
 
         setSocket(socketInstance)
         start()
@@ -124,6 +132,7 @@ const SocketConnection = ({setSocket,setIsConnected}:{
             cancelled=true
             clearTimeout(retry)
             clearInterval(refresh)
+            document.removeEventListener("visibilitychange",onVisible)
             socketInstance.disconnect()
             setSocket(null)
             setIsConnected(false)

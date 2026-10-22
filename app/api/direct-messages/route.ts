@@ -1,3 +1,4 @@
+import { getConversationAccess } from "@/lib/auth/access";
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { messageInclude } from "@/lib/public-profile";
@@ -19,6 +20,9 @@ export async function GET(req: Request) {
         }
         if (!conversationId) {
             return new NextResponse("Channel ID Missing", { status: 400 });
+        }
+        if (!(await getConversationAccess(profile.id, conversationId))) {
+            return new NextResponse("Forbidden", { status: 403 });
         }
         let messages: DirectMessage[] = [];
 

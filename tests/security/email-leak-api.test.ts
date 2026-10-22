@@ -12,7 +12,8 @@ const db = vi.hoisted(() => ({
     message: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     directMessage: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     server: { findFirst: vi.fn(), update: vi.fn() },
-    channel: { findFirst: vi.fn() },
+    channel: { findFirst: vi.fn(), findUnique: vi.fn() },
+    member: { findFirst: vi.fn() },
     conversation: { findFirst: vi.fn() },
 }));
 vi.mock("@/lib/db", () => ({ db }));
@@ -55,6 +56,8 @@ beforeEach(() => {
     db.server.findFirst.mockImplementation(projecting(server));
     db.server.update.mockImplementation(projecting(server));
     db.channel.findFirst.mockResolvedValue(channel);
+    db.channel.findUnique.mockResolvedValue(channel);
+    db.member.findFirst.mockImplementation(projecting(viewerMember));
     db.conversation.findFirst.mockImplementation(projecting(conversation));
 });
 

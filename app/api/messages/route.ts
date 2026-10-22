@@ -1,3 +1,4 @@
+import { getChannelAccess } from "@/lib/auth/access";
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { messageInclude } from "@/lib/public-profile";
@@ -19,6 +20,9 @@ export async function GET(req: Request) {
         }
         if (!channelId) {
             return new NextResponse("Channel ID Missing", { status: 400 });
+        }
+        if (!(await getChannelAccess(profile.id, channelId))) {
+            return new NextResponse("Forbidden", { status: 403 });
         }
         let messages: Message[] = [];
 

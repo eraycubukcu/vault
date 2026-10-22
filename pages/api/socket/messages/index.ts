@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { messageInclude } from "@/lib/public-profile";
 import { NextApiResponseServerIo } from "@/types";
 import { NextApiRequest } from "next";
+import { emitToChat } from "@/lib/socket/server";
 
 export default async function handler(
     req: NextApiRequest,
@@ -73,7 +74,7 @@ export default async function handler(
         })
 
         const channelKey=`chat:${channelId}:messages`;
-        res?.socket?.server?.io?.emit(channelKey,message);
+        emitToChat(channelId as string, channelKey, message);
         
 
         return res.status(200).json(message)

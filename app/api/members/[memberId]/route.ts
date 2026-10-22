@@ -2,6 +2,8 @@ import { currentProfile } from "@/lib/current-profile"
 import { db } from "@/lib/db";
 import { membersWithPublicProfile, withViewerEmail } from "@/lib/public-profile";
 import { NextResponse } from "next/server"
+import { getMemberChatIds } from "@/lib/auth/access";
+import { leaveServerRooms } from "@/lib/socket/server";
 
 export async function PATCH(
     req: Request,
@@ -78,6 +80,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ membe
         if (!memberId) {
             return new NextResponse("Member ID missing", { status: 400 })
         }
+        // Atılan kişinin socket'lerini odalardan çıkarmak için gereken bilgiyi silmeden önce oku.
+        const kicked = await db.member.findFirst({
+            where: { id: memberId, serverId }
+        })
+        const kickedChatIds = kicked && kicked.profileId !== profile.id ? await getMemberChatIds(kicked) : []
         const server = await db.server.update({
             where: {
                 id: serverId,
@@ -102,6 +109,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ membe
                 }
             }
         })
+        if (kicked && kickedChatIds.length) {
+            leaveServerRooms(kicked.profileId, kickedChatIds)
+        }
         return NextResponse.json(withViewerEmail(server, profile))
     }
     catch (error) {

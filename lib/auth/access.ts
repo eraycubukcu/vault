@@ -45,10 +45,24 @@ export async function getConversationAccess(profileId: string, conversationId: s
     return { conversation, member };
 }
 
-// `chatId` bir kanal ya da sohbet olabilir.
+// `chatId` bir kanal ya da sohbet olabilir; türü bilinmediği için iki sorgu paralel çalışır.
 export async function canAccessChat(profileId: string, chatId: string): Promise<boolean> {
-    if (await getChannelAccess(profileId, chatId)) {
-        return true;
-    }
-    return (await getConversationAccess(profileId, chatId)) !== null;
+    const [channelAccess, conversationAccess] = await Promise.all([
+        getChannelAccess(profileId, chatId),
+        getConversationAccess(profileId, chatId),
+    ]);
+    return channelAccess !== null || conversationAccess !== null;
+}
+
+// Üyelik bittiğinde socket'i çıkarılacak sohbetler: sunucunun tüm kanalları ve
+// bu üyeliğin taraf olduğu özel sohbetler. Silme cascade ile bunları sildiği için silmeden ÖNCE çağrılmalı.
+export async function getMemberChatIds(member: { id: string; serverId: string }): Promise<string[]> {
+    const [channels, conversations] = await Promise.all([
+        db.channel.findMany({ where: { serverId: member.serverId }, select: { id: true } }),
+        db.conversation.findMany({
+            where: { OR: [{ memberOneId: member.id }, { memberTwoId: member.id }] },
+            select: { id: true },
+        }),
+    ]);
+    return [...channels, ...conversations].map(({ id }) => id);
 }

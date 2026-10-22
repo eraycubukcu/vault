@@ -1,7 +1,7 @@
 // @vitest-environment node
 // F-02 ek / F-12: başkalarına giden hiçbir yanıtta veya socket payload'ında
 // e-posta (ve Clerk userID) bulunmamalı. Kişi yalnızca kendi e-postasını görebilir.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { projecting } from "../helpers/prisma-fake";
 import {
     OTHER_EMAIL, OTHER_USER_ID, VIEWER_EMAIL,
@@ -12,9 +12,9 @@ const db = vi.hoisted(() => ({
     message: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     directMessage: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     server: { findFirst: vi.fn(), update: vi.fn() },
-    channel: { findFirst: vi.fn(), findUnique: vi.fn() },
+    channel: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(async () => []) },
     member: { findFirst: vi.fn() },
-    conversation: { findFirst: vi.fn() },
+    conversation: { findFirst: vi.fn(), findMany: vi.fn(async () => []) },
 }));
 vi.mock("@/lib/db", () => ({ db }));
 vi.mock("@/lib/current-profile", () => ({ currentProfile: vi.fn(async () => viewerProfile) }));
@@ -40,13 +40,14 @@ const expectNoEmailAtAll = (payload: unknown) => {
 };
 
 function pagesCall(method: string, query: Record<string, string>, body: unknown = {}) {
+    // Olaylar emitToChat ile sohbet odasına gider (Görev 4); odaya yayınlananı yakala.
     const emit = vi.fn();
+    globalThis.__vaultIO = { to: () => ({ emit }) } as any;
     const res: any = {
         statusCode: 0,
         body: undefined,
         status(code: number) { this.statusCode = code; return this; },
         json(data: unknown) { this.body = JSON.parse(JSON.stringify(data)); return this; },
-        socket: { server: { io: { emit } } },
     };
     return { req: { method, query, body } as any, res, emit };
 }
@@ -59,6 +60,10 @@ beforeEach(() => {
     db.channel.findUnique.mockResolvedValue(channel);
     db.member.findFirst.mockImplementation(projecting(viewerMember));
     db.conversation.findFirst.mockImplementation(projecting(conversation));
+});
+
+afterEach(() => {
+    globalThis.__vaultIO = undefined;
 });
 
 describe("mesaj geçmişi GET yanıtları", () => {

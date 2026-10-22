@@ -4,6 +4,7 @@ import { messageInclude } from "@/lib/public-profile";
 import { NextApiResponseServerIo } from "@/types";
 import { MemberRole } from "@prisma/client";
 import { NextApiRequest } from "next";
+import { emitToChat } from "@/lib/socket/server";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponseServerIo) {
 
@@ -104,7 +105,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponseS
 
         const updateKey = `chat:${conversation.id}:messages:update`;
 
-        res?.socket?.server?.io?.emit(updateKey, message);
+        emitToChat(conversationId as string, updateKey, message);
 
         return res.status(200).json(message)
     }

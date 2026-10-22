@@ -72,7 +72,7 @@ export const ChatMessages = ({
         setStatus(status)
     })
 
-    useChatSocket({ queryKey, addKey, updateKey })
+    useChatSocket({ chatId, queryKey, addKey, updateKey })
 
     useChatScroll({chatRef,bottomRef,loadMore:fetchNextPage,shouldLoadMore:!isFetchingNextPage && !!hasNextPage,count:data?.pages?.[0]?.items.length??0})
 

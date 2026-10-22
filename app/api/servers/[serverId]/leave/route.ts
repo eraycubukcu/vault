@@ -1,6 +1,8 @@
 import { currentProfile } from "@/lib/current-profile"
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server"
+import { getMemberChatIds } from "@/lib/auth/access";
+import { leaveServerRooms } from "@/lib/socket/server";
 
 export async function PATCH(
     req:Request,
@@ -16,6 +18,11 @@ export async function PATCH(
         if(!serverId){
             return new NextResponse("Server ID missing",{status:400})
         }
+        // Socket'leri odalardan çıkarmak için gereken bilgiyi silmeden önce oku.
+        const member=await db.member.findFirst({
+            where:{serverId,profileId:profile.id}
+        })
+        const chatIds=member?await getMemberChatIds(member):[]
         const server=await db.server.update({
             where:{
                 id:serverId,
@@ -36,6 +43,7 @@ export async function PATCH(
                 }
             }
         })
+        leaveServerRooms(profile.id,chatIds)
         return NextResponse.json(server)
     }
     catch(error){

@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 type ChatSocketProps = {
+    chatId: string;
     addKey: string;
     updateKey: string;
     queryKey: string;
@@ -17,6 +18,7 @@ type MessageWithMemberWithProfile = Message & {
 }
 
 export const useChatSocket = ({
+    chatId,
     addKey,
     updateKey,
     queryKey,
@@ -28,7 +30,13 @@ export const useChatSocket = ({
         if (!socket) {
             return;
         }
-        socket.on(updateKey, (message: MessageWithMemberWithProfile) => {
+        // Sunucu yetkiyi kontrol edip odaya katar; yeniden bağlanınca oda üyeliği
+        // sıfırlandığı için "connect" olayında tekrar katılınır.
+        const join = () => socket.emit("chat:join", chatId, () => {});
+        join();
+        socket.on("connect", join);
+
+        const onUpdate = (message: MessageWithMemberWithProfile) => {
             queryClient.setQueryData([queryKey], (oldData: any) => {
                 if (!oldData || !oldData.pages || oldData.pages.length === 0) {
                     return oldData;
@@ -49,9 +57,9 @@ export const useChatSocket = ({
                     pages: newData,
                 }
             })
-        });
+        };
 
-        socket.on(addKey, (message: MessageWithMemberWithProfile) => {
+        const onAdd = (message: MessageWithMemberWithProfile) => {
             queryClient.setQueryData([queryKey], (oldData: any) => {
                 if (!oldData || !oldData.pages || oldData.pages.length === 0) {
                     return {
@@ -77,13 +85,18 @@ export const useChatSocket = ({
                     pages: newData,
                 }
             })
-        })
+        };
+
+        socket.on(updateKey, onUpdate);
+        socket.on(addKey, onAdd);
 
         return ()=>{
-            socket.off(addKey);
-            socket.off(updateKey);
+            socket.off("connect", join);
+            socket.off(addKey, onAdd);
+            socket.off(updateKey, onUpdate);
+            socket.emit("chat:leave", chatId);
         }
 
-    }, [queryClient,addKey,queryKey,socket,updateKey])
+    }, [queryClient,chatId,addKey,queryKey,socket,updateKey])
 
 }

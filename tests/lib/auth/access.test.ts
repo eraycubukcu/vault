@@ -5,13 +5,13 @@ import { foreignChannel, installAccessDb, outsiderProfileId } from "../../helper
 import { channel, conversation, otherProfile, viewerProfile } from "../../helpers/fixtures";
 
 const db = vi.hoisted(() => ({
-    channel: { findUnique: vi.fn() },
+    channel: { findUnique: vi.fn(), findMany: vi.fn() },
     member: { findFirst: vi.fn() },
-    conversation: { findFirst: vi.fn() },
+    conversation: { findFirst: vi.fn(), findMany: vi.fn() },
 }));
 vi.mock("@/lib/db", () => ({ db }));
 
-import { canAccessChat, getChannelAccess, getConversationAccess } from "@/lib/auth/access";
+import { canAccessChat, getChannelAccess, getConversationAccess, getMemberChatIds } from "@/lib/auth/access";
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -41,6 +41,20 @@ describe("getChannelAccess", () => {
 });
 
 describe("getConversationAccess", () => {
+    // F-21: yetki Prisma where içinde de uygulanmalı; koddaki taraf kontrolü tek savunma kalmamalı.
+    it("sorguyu iki taraftan biri olma koşuluyla (OR) yapar", async () => {
+        await getConversationAccess(viewerProfile.id, conversation.id);
+        expect(db.conversation.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: {
+                id: conversation.id,
+                OR: [
+                    { memberOne: { profileId: viewerProfile.id } },
+                    { memberTwo: { profileId: viewerProfile.id } },
+                ],
+            },
+        }));
+    });
+
     it("üçüncü bir kişi için null döner", async () => {
         expect(await getConversationAccess(outsiderProfileId, conversation.id)).toBeNull();
     });
@@ -63,6 +77,17 @@ describe("getConversationAccess", () => {
 });
 
 describe("canAccessChat", () => {
+    // F-23: sohbet kimliği için kanal sorgusunun bitmesi beklenmemeli (iki sorgu paralel).
+    it("kanal ve sohbet sorgularını aynı anda başlatır", async () => {
+        let releaseChannel!: (value: null) => void;
+        db.channel.findUnique.mockImplementation(() => new Promise((resolve) => { releaseChannel = resolve; }));
+        const result = canAccessChat(viewerProfile.id, conversation.id);
+        await Promise.resolve();
+        expect(db.conversation.findFirst).toHaveBeenCalled();
+        releaseChannel(null);
+        expect(await result).toBe(true);
+    });
+
     it("erişilebilir kanal için true", async () => {
         expect(await canAccessChat(viewerProfile.id, channel.id)).toBe(true);
     });
@@ -75,5 +100,35 @@ describe("canAccessChat", () => {
         expect(await canAccessChat(outsiderProfileId, channel.id)).toBe(false);
         expect(await canAccessChat(outsiderProfileId, conversation.id)).toBe(false);
         expect(await canAccessChat(viewerProfile.id, "bilinmeyen-id")).toBe(false);
+    });
+});
+
+// F-02: atılan/ayrılan üyenin socket'i bu listedeki odalardan çıkarılır.
+describe("getMemberChatIds", () => {
+    const channels = [{ id: "c-1", serverId: "s-1" }, { id: "c-9", serverId: "s-1" }, { id: "c-2", serverId: "s-2" }];
+    const conversations = [
+        { id: "conv-1", memberOneId: "m-viewer", memberTwoId: "m-other" },
+        { id: "conv-2", memberOneId: "m-third", memberTwoId: "m-other" },
+        { id: "conv-3", memberOneId: "m-viewer", memberTwoId: "m-third" },
+    ];
+
+    beforeEach(() => {
+        db.channel.findMany.mockImplementation(async ({ where }: any) =>
+            channels.filter((c) => c.serverId === where.serverId).map(({ id }) => ({ id })));
+        db.conversation.findMany.mockImplementation(async ({ where }: any) =>
+            conversations
+                .filter((conv) => (where.OR as Record<string, string>[]).some((cond) =>
+                    Object.entries(cond).every(([key, value]) => (conv as any)[key] === value)))
+                .map(({ id }) => ({ id })));
+    });
+
+    it("sunucunun tüm kanallarını ve üyenin her iki taraftan da katıldığı sohbetleri döner", async () => {
+        const ids = await getMemberChatIds({ id: "m-other", serverId: "s-1" });
+        expect(ids.sort()).toEqual(["c-1", "c-9", "conv-1", "conv-2"]);
+    });
+
+    it("başka sunucunun kanallarını ve üyenin taraf olmadığı sohbetleri içermez", async () => {
+        const ids = await getMemberChatIds({ id: "m-third", serverId: "s-2" });
+        expect(ids.sort()).toEqual(["c-2", "conv-2", "conv-3"]);
     });
 });

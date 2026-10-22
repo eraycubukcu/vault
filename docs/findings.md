@@ -41,6 +41,10 @@ Doğrulama durumu:
 | F-18 | 🔵 | Ölü kod ve küçük hatalar |
 | F-19 | 🔵 | Arayüz dili tutarsız |
 | F-20 | 🔵 | Dokümantasyon ve yapılandırma eksikleri |
+| F-21 | 🔵 | Sohbet erişim sorgusundaki `OR` koşulu tek başına test edilmiyor |
+| F-22 | 🟡 | `useChatQuery` 403 yanıtını JSON olarak okumaya çalışıyor |
+| F-23 | 🔵 | `canAccessChat` sohbet kimliği için önce boşuna kanal sorgusu yapıyor |
+| F-24 | 🔵 | Başka bir sohbete ait cursor sayfadan mesaj düşürebiliyor |
 
 ---
 
@@ -213,3 +217,37 @@ Doğrulama durumu:
 - `Dockerfile` `.gitignore` içinde; bu yüzden dağıtım yöntemi repoda tanımlı değil.
 - `public/sw.js`, `/badge.png` dosyasına ve sabit kodlu bir URL'ye başvuruyor.
 - `prisma/schema.prisma`: mesaj sorguları `channelId` ile filtreleyip `createdAt` ile sıralıyor. Bunun için birleşik bir indeks (`@@index([channelId, createdAt])`) yok; aynı durum `conversationId` için de geçerli.
+
+---
+
+## Sonradan eklenenler (Paket 3 bağımsız incelemesi)
+
+Aşağıdaki maddeler Görev 3'ün (F-01) bağımsız incelemesinde bulundu. Hiçbiri F-01'in kapanmasını engellemiyor; her birinin ele alınacağı görev belirtildi.
+
+### F-21: Sohbet erişim sorgusundaki `OR` koşulu tek başına test edilmiyor
+- **Yer:** `lib/auth/access.ts` (`getConversationAccess`), `tests/lib/auth/access.test.ts`
+- **Kanıt:** Yetki iki katmanda kontrol ediliyor: Prisma `where` içindeki `OR: [{ memberOne: { profileId } }, { memberTwo: { profileId } }]` ve ardından kodda profilin tarafını seçen kontrol. `OR` koşulu silinse bile ikinci kontrol üçüncü kişi için `null` döndürdüğü için testler geçmeye devam ediyor.
+- **Etki:** Bugün güvenlik açığı yok. Ancak iki katmandan biri kaldırılırsa testler bunu fark etmez; savunma tek katmana düşer.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 4 (`canAccessChat`'in ilk tüketicisi; erişim testleri orada genişletilecek). `db.conversation.findFirst` çağrısının `OR` koşuluyla yapıldığını doğrulayan bir test eklenmeli.
+
+### F-22: `useChatQuery` 403 yanıtını JSON olarak okumaya çalışıyor
+- **Yer:** `hooks/use-chat-query.ts:29-30`
+- **Kanıt:** `fetchMessages`, `res.ok` kontrolü yapmadan `res.json()` çağırıyor. F-01 düzeltmesinden sonra üye olmayan (örneğin sunucudan atılmış) kullanıcıya düz metin `"Forbidden"` dönüyor ve JSON ayrıştırması hata fırlatıyor.
+- **Etki:** Sunucudan atılan kullanıcının açık sekmesinde sohbet hata durumuna düşüyor; React Query 3 kez yeniden deniyor ve 60 saniyede bir yeniden çekmeye devam ediyor. Üyeler etkilenmiyor.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 8 (F-05, aynı dosya yeniden yazılıyor). `res.ok` değilse anlamlı bir hata fırlatılmalı ve 401/403'te yeniden deneme kapatılmalı.
+
+### F-23: `canAccessChat` sohbet kimliği için önce boşuna kanal sorgusu yapıyor
+- **Yer:** `lib/auth/access.ts` (`canAccessChat`)
+- **Kanıt:** Fonksiyon önce `getChannelAccess`, sonuç yoksa `getConversationAccess` çağırıyor. Sohbet kimliği verildiğinde her seferinde bir `channel.findUnique` boşa gidiyor.
+- **Etki:** Socket odasına her katılma denetiminde bir ek veritabanı turu. Performans etkisi küçük.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 4 (socket handshake ve oda katılımı `canAccessChat`'i kullanacak). İki sorgu paralel çalıştırılabilir ya da istemci sohbet türünü bildirebilir.
+
+### F-24: Başka bir sohbete ait cursor sayfadan mesaj düşürebiliyor
+- **Yer:** `app/api/messages/route.ts`, `app/api/direct-messages/route.ts` (cursor dalı, `skip: 1`)
+- **Kanıt:** Sorgu `where: { channelId }` / `where: { conversationId }` ile sınırlı olduğu için veri sızmıyor. Ancak cursor başka bir sohbetin mesajını gösterirse `skip: 1` meşru bir mesajı atlayabiliyor ya da sayfa boş dönüyor. F-01 öncesinde de vardı.
+- **Etki:** Güvenlik sorunu değil; kurcalanmış istekte sayfalama tutarsızlığı.
+- **Durum:** Kodda doğrulandı.
+- **Ele alınacağı görev:** Görev 8 (sayfalama). Görev 8'in dosya listesine iki geçmiş route'u eklenmeli; cursor'ın aynı sohbete ait olduğu doğrulanmalı, değilse 400 dönülmeli.

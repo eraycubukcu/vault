@@ -1,0 +1,45 @@
+@startuml 09-seq-send-message-realtime
+title Kanal Mesajı Gönderme ve Gerçek Zamanlı Dağıtım
+autonumber
+
+actor "Gönderen" as A
+participant "ChatInput" as CI
+participant "ChatMessages" as CM
+participant "React Query cache\n[chat:{channelId}]" as RQ
+participant "GET /api/messages" as Get
+participant "POST /api/socket/messages\n?serverId&channelId" as API
+participant "currentProfilePages(req)" as CPP
+database "MongoDB" as DB
+participant "Socket.IO Server\n(res.socket.server.io)" as IO
+participant "useChatSocket\n(bağlı istemciler)" as Sock
+
+== Başlangıç: geçmiş yükleme ==
+CM -> RQ : useChatQuery (useInfiniteQuery)
+RQ -> Get : ?channelId[&cursor]
+note right of Get : 10'arlı sayfalar, createdAt desc,\nnextCursor = son mesajın id'si
+Get --> RQ : { items, nextCursor }
+
+== Gönderme ==
+A -> CI : mesaj yaz + Enter
+CI -> API : axios.post({ content })
+API -> CPP : getAuth(req) → profile
+alt profile yok
+  API --> CI : 401
+end
+API -> DB : server.findFirst({ id, members.some.profileId }, include members)
+API -> DB : channel.findFirst({ id: channelId, serverId })
+API -> API : member = server.members.find(profileId)
+alt server / kanal / üye bulunamadı
+  API --> CI : 404
+end
+API -> DB : message.create({ content, fileUrl, channelId, memberId },\n include member.profile)
+DB --> API : message
+API -> IO : io.emit("chat:{channelId}:messages", message)
+API --> CI : 200 message
+CI -> CI : form.reset(), router.refresh()
+
+IO ->> Sock : "chat:{channelId}:messages"
+Sock -> RQ : setQueryData: mesajı\npages[0].items başına ekle
+RQ --> CM : yeniden render
+CM -> CM : useChatScroll → en alta kaydır
+@enduml

@@ -1,0 +1,35 @@
+@startuml 16-state-modal-store
+title Modal Yönetimi - useModal (zustand) Durum Diyagramı
+
+state "Kapalı" as Closed
+Closed : type = null
+Closed : isOpen = false
+
+state "Açık" as Open {
+  state "createServer" as cs
+  state "editServer" as es
+  state "deleteServer" as ds
+  state "leaveServer" as ls
+  state "invite" as inv
+  state "members" as mem
+  state "createChannel" as cc
+  state "editChannel" as ec
+  state "deleteChannel" as dc
+  state "messageFile" as mf
+  state "deleteMessage" as dm
+  state "helpModal" as hm
+}
+Open : isOpen = true
+Open : data = { server?, channel?, channelType?,\n apiUrl?, query?, helpSectionModalInfo? }
+
+[*] --> Closed
+Closed --> Open : onOpen(type, data)
+Open --> Open : onOpen(type, data)\n(ör. invite → yeni kod,\nmembers → güncel liste)
+Open --> Closed : onClose()\n(veya işlem başarılı)
+
+note right of Open
+  Her modal bileşeni şunu kontrol eder:
+  isModalOpen = isOpen && type === "<kendi tipi>"
+  ModalProvider tüm modalları tek seferde mount eder.
+end note
+@enduml

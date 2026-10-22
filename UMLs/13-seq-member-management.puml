@@ -1,0 +1,31 @@
+@startuml 13-seq-member-management
+title Üye Yönetimi (Rol Değiştirme / Atma)
+autonumber
+
+actor Admin
+participant "MembersModal" as MM
+participant "/api/members/{memberId}?serverId" as API
+participant "currentProfile()" as CP
+database "MongoDB" as DB
+
+Admin -> MM : onOpen("members", { server })
+alt Rol değiştir
+  Admin -> MM : rol seç (GUEST / MODERATOR)
+  MM -> API : axios.patch({ role })
+  API -> CP : profile
+  API -> DB : server.update({ id: serverId, profileId: profile.id },\n members.update({ where: { id, profileId ≠ profile.id }, data: { role } }))
+else Üyeyi at
+  Admin -> MM : "Kick"
+  MM -> API : axios.delete
+  API -> CP : profile
+  API -> DB : server.update({ id: serverId, profileId: profile.id },\n members.deleteMany({ id, profileId ≠ profile.id }))
+end
+DB --> API : server (+ members.profile, role asc)
+API --> MM : 200 server
+MM -> MM : router.refresh(), onOpen("members", { server: response.data })
+note right of API
+  Yalnızca sunucu sahibi (server.profileId)
+  işlem yapabilir; sahip kendi rolünü
+  değiştiremez ve kendini atamaz.
+end note
+@enduml

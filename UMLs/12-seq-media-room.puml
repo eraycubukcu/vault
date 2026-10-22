@@ -1,0 +1,35 @@
+@startuml 12-seq-media-room
+title Sesli / Görüntülü Kanala Katılma (LiveKit)
+autonumber
+
+actor Kullanıcı
+participant "ChannelIdPage" as Page
+participant "MediaRoom" as MR
+participant "useUser() (Clerk)" as Clerk
+participant "GET /api/livekit" as API
+participant "livekit-server-sdk\nAccessToken" as AT
+participant "LiveKitRoom +\nVideoConference2" as Room
+participant "LiveKit Cloud" as LK
+
+Kullanıcı -> Page : AUDIO / VIDEO kanalını aç
+Page -> MR : chatId=channel.id,\nvideo=(type==VIDEO), audio=true
+MR -> Clerk : user.firstName, lastName
+MR --> Kullanıcı : "Yükleniyor" (token boş)
+MR -> API : ?room={chatId}&username={ad soyad}
+alt room / username eksik
+  API --> MR : 400
+else ortam değişkeni eksik
+  API --> MR : 500 "Server misconfigured"
+else
+  API -> AT : new AccessToken(key, secret, { identity })
+  API -> AT : addGrant({ room, roomJoin, canPublish, canSubscribe })
+  AT --> API : JWT
+  API --> MR : { token }
+end
+MR -> Room : render(serverUrl, token, video, audio)
+Room -> LK : WebSocket + WebRTC bağlantısı
+LK --> Room : katılımcı izleri (kamera, mikrofon, ekran)
+opt bir katılımcı ekran paylaşırsa
+  Room -> Room : ekran paylaşımını otomatik pin'le\n(FocusLayout + CarouselLayout)
+end
+@enduml

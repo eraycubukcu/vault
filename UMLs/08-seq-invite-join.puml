@@ -1,0 +1,42 @@
+@startuml 08-seq-invite-join
+title Davet Linki ile Sunucuya Katılma
+autonumber
+
+actor Admin
+actor "Davet edilen\nkullanıcı" as U
+participant "InviteModal" as IM
+participant "PATCH /api/servers/{id}/invite-code" as IC
+participant "InviteCodePage\n/invite/[inviteCode]" as IP
+participant "currentProfile()" as CP
+database "MongoDB" as DB
+
+== Davet linkini paylaşma / yenileme ==
+Admin -> IM : onOpen("invite", { server })
+IM --> Admin : {origin}/invite/{inviteCode}
+opt "Yeni link oluştur"
+  IM -> IC : axios.patch
+  IC -> DB : server.update({ id, profileId }, { inviteCode: uuidv4() })
+  DB --> IC : server
+  IC --> IM : server (yeni kod)
+  IM -> IM : onOpen("invite", { server })
+end
+Admin -> U : linki gönder
+
+== Katılma ==
+U -> IP : GET /invite/{inviteCode}
+IP -> CP : currentProfile()
+alt oturum yok
+  IP --> U : <RedirectToSignIn/>
+end
+CP --> IP : profile
+IP -> DB : server.findFirst({ inviteCode, members.some.profileId })
+alt zaten üye
+  DB --> IP : existingServer
+  IP --> U : redirect(/servers/{id})
+else üye değil
+  IP -> DB : server.update({ inviteCode },\n { members.create: { profileId } })
+  note right : yeni üye varsayılan\nrol GUEST ile eklenir
+  DB --> IP : server
+  IP --> U : redirect(/servers/{id})
+end
+@enduml

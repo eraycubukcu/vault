@@ -1,0 +1,92 @@
+@startuml 01-use-case
+title Vault Chat - Kullanım Durumu (Use Case) Diyagramı
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+
+actor "Ziyaretçi" as Guest
+actor "Kullanıcı\n(GUEST üye)" as User
+actor "Moderatör" as Mod
+actor "Admin\n(Sunucu sahibi)" as Admin
+actor "Clerk" as Clerk <<sistem>>
+actor "LiveKit" as LiveKit <<sistem>>
+actor "UploadThing" as UT <<sistem>>
+
+User -|> Guest
+Mod -|> User
+Admin -|> Mod
+
+rectangle "Vault Chat" {
+  usecase "Ana sayfayı / yardımı görüntüle" as UC_Home
+  usecase "Kayıt ol / Giriş yap" as UC_Auth
+
+  usecase "Sunucu oluştur" as UC_CreateServer
+  usecase "Davet linki ile sunucuya katıl" as UC_Join
+  usecase "Sunucudan ayrıl" as UC_Leave
+  usecase "Kanal / üye ara" as UC_Search
+
+  usecase "Metin kanalında mesaj gönder" as UC_SendMsg
+  usecase "Dosya / görsel ekle" as UC_File
+  usecase "Kendi mesajını düzenle" as UC_EditMsg
+  usecase "Kendi mesajını sil" as UC_DelMsg
+  usecase "Mesaj geçmişini yükle\n(sonsuz kaydırma)" as UC_History
+  usecase "Üyeyle özel mesajlaş" as UC_DM
+  usecase "Sesli / görüntülü kanala katıl" as UC_Media
+  usecase "Ekran paylaş" as UC_Screen
+  usecase "Tema değiştir (açık/koyu)" as UC_Theme
+
+  usecase "Kanal oluştur" as UC_CreateCh
+  usecase "Kanal düzenle" as UC_EditCh
+  usecase "Kanal sil" as UC_DelCh
+  usecase "Başkasının mesajını sil" as UC_ModDel
+
+  usecase "Sunucuyu düzenle" as UC_EditServer
+  usecase "Sunucuyu sil" as UC_DelServer
+  usecase "Davet kodunu yenile" as UC_Invite
+  usecase "Üye rolünü değiştir" as UC_Role
+  usecase "Üyeyi at (kick)" as UC_Kick
+}
+
+Guest --> UC_Home
+Guest --> UC_Auth
+UC_Auth --> Clerk
+
+User --> UC_CreateServer
+User --> UC_Join
+User --> UC_Leave
+User --> UC_Search
+User --> UC_SendMsg
+User --> UC_EditMsg
+User --> UC_DelMsg
+User --> UC_History
+User --> UC_DM
+User --> UC_Media
+User --> UC_Theme
+
+UC_File .> UC_SendMsg : <<extend>>
+UC_File --> UT
+UC_CreateServer ..> UC_File : <<include>>\nsunucu görseli
+UC_Media --> LiveKit
+UC_Screen .> UC_Media : <<extend>>
+UC_Media .> UC_DM : <<extend>>\n?video=true
+
+Mod --> UC_CreateCh
+Mod --> UC_EditCh
+Mod --> UC_DelCh
+Mod --> UC_ModDel
+
+Admin --> UC_EditServer
+Admin --> UC_DelServer
+Admin --> UC_Invite
+Admin --> UC_Role
+Admin --> UC_Kick
+
+note bottom of UC_DelCh
+  "general" kanalı düzenlenemez
+  ve silinemez.
+end note
+note bottom of UC_Leave
+  Sunucu sahibi (Admin)
+  sunucudan ayrılamaz.
+end note
+@enduml

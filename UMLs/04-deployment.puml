@@ -1,0 +1,46 @@
+@startuml 04-deployment
+title Vault Chat - Dağıtım (Deployment) Diyagramı
+
+node "Kullanıcı Cihazı" as Device {
+  node "Web Tarayıcı / PWA" as Browser {
+    artifact "Next.js istemci paketi\n(React 19)" as Bundle
+    artifact "manifest.webmanifest" as Manifest
+  }
+}
+
+node "Uygulama Sunucusu\n(Node.js, kalıcı süreç)" as AppNode {
+  component "next start" as NextApp {
+    artifact "App Router\n(sayfalar + app/api)" as AR
+    artifact "Pages API\n(pages/api/socket)" as PA
+    artifact "Socket.IO Server\n(res.socket.server.io)" as SIO
+    artifact "Prisma Client\n(binaryTargets: native,\nlinux-musl, openssl-3.0.x)" as PC
+  }
+}
+
+cloud "Clerk" as Clerk
+cloud "LiveKit Cloud" as LiveKit
+cloud "UploadThing (CDN)" as UT
+database "MongoDB\n(DATABASE_URL)" as Mongo
+
+Browser -- AppNode : HTTPS
+Browser -- AppNode : WebSocket\n/api/socket/io
+Browser -- Clerk : HTTPS (oturum, SDK)
+Browser -- LiveKit : WSS + WebRTC\n(NEXT_PUBLIC_LIVEKIT_URL)
+Browser -- UT : HTTPS (dosya yükleme/indirme)
+AppNode -- Mongo : MongoDB protokolü
+AppNode -- Clerk : HTTPS (token doğrulama)
+AppNode -- UT : HTTPS
+AppNode ..> LiveKit : LIVEKIT_API_KEY / SECRET\nile JWT üretimi
+
+note right of AppNode
+  Socket.IO, Next.js HTTP sunucusuna
+  bağlandığı için uygulama kalıcı bir
+  Node.js sürecinde çalışmalıdır.
+
+  Ortam değişkenleri:
+  DATABASE_URL, CLERK_*, LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET, NEXT_PUBLIC_LIVEKIT_URL,
+  NEXT_PUBLIC_SITE_URL, UPLOADTHING_*,
+  NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
+end note
+@enduml

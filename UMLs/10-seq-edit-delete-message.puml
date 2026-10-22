@@ -1,0 +1,45 @@
+@startuml 10-seq-edit-delete-message
+title Mesaj Düzenleme / Silme
+autonumber
+
+actor Kullanıcı
+participant "ChatItem" as Item
+participant "DeleteMessageModal" as DM
+participant "/api/socket/messages/{messageId}\n?serverId&channelId" as API
+database "MongoDB" as DB
+participant "Socket.IO Server" as IO
+participant "useChatSocket\n(bağlı istemciler)" as Sock
+
+alt Düzenle (PATCH)
+  Kullanıcı -> Item : düzenle → yeni içerik
+  Item -> API : axios.patch({ content })
+else Sil (DELETE)
+  Kullanıcı -> Item : çöp kutusu
+  Item -> DM : onOpen("deleteMessage", { apiUrl, query })
+  Kullanıcı -> DM : onayla
+  DM -> API : axios.delete
+end
+
+API -> DB : profile, server, channel, member doğrulamaları
+API -> DB : message.findFirst({ id, channelId })
+alt mesaj yok veya deleted
+  API --> Item : 404
+end
+API -> API : canModify = sahibi || ADMIN || MODERATOR
+alt !canModify
+  API --> Item : 401
+end
+alt DELETE
+  API -> DB : message.update({ deleted: true, fileUrl: null,\n content: "This message has been deleted" })
+else PATCH
+  alt mesaj sahibi değil
+    API --> Item : 401
+  end
+  API -> DB : message.update({ content })
+end
+DB --> API : message
+API -> IO : io.emit("chat:{channelId}:messages:update", message)
+API --> Item : 200
+IO ->> Sock : update olayı
+Sock -> Sock : cache'te id'si eşleşen öğeyi değiştir
+@enduml

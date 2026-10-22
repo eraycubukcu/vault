@@ -1,0 +1,50 @@
+@startuml 06-seq-auth-setup
+title Giriş ve İlk Kurulum Akışı (/ → /servers/{id})
+autonumber
+
+actor Kullanıcı
+participant "Tarayıcı" as B
+participant "middleware.ts\n(clerkMiddleware)" as MW
+participant "Clerk" as Clerk
+participant "SetupPage\napp/(setup)/page.tsx" as Setup
+participant "initialProfile()" as IP
+database "MongoDB\n(Prisma)" as DB
+
+Kullanıcı -> B : uygulamayı aç
+B -> MW : GET /
+note right of MW : "/" public route
+MW -> Setup : isteği ilet
+Setup -> IP : initialProfile()
+IP -> Clerk : currentUser()
+alt oturum yok
+  Clerk --> IP : null
+  IP --> B : redirect("/home")
+  Kullanıcı -> B : "Giriş yap"
+  B -> Clerk : /sign-in (Clerk bileşeni)
+  Clerk --> B : oturum çerezi
+  B -> MW : GET /
+  MW -> Setup
+  Setup -> IP : initialProfile()
+  IP -> Clerk : currentUser()
+end
+Clerk --> IP : user
+IP -> DB : profile.findUnique({ userID: user.id })
+alt profil yok
+  IP -> DB : profile.create({ userID, name, imageUrl, email })
+  DB --> IP : yeni Profile
+else profil var
+  DB --> IP : Profile
+end
+IP --> Setup : profile
+Setup -> DB : server.findFirst({ members.some.profileId })
+alt üye olunan sunucu var
+  DB --> Setup : server
+  Setup --> B : redirect(/servers/{server.id})
+  B -> MW : GET /servers/{id}
+  MW -> Clerk : auth.protect()
+  note over B : ServerPage → "general" kanalına\nredirect(/servers/{id}/channels/{generalId})
+else hiç sunucu yok
+  DB --> Setup : null
+  Setup --> B : <InitialModal/> (ilk sunucuyu oluştur)
+end
+@enduml

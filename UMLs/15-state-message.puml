@@ -1,0 +1,26 @@
+@startuml 15-state-message
+title Mesaj (Message / DirectMessage) Durum Diyagramı
+
+state "Gönderildi" as Sent
+state "Düzenlendi" as Edited
+state "Silindi" as Deleted
+
+[*] --> Sent : POST /api/socket/...\nmessage.create
+Sent : deleted = false
+Sent : createdAt == updatedAt
+
+Sent --> Edited : PATCH (yalnızca sahibi)
+Edited : updatedAt > createdAt
+Edited : UI'da "(düzenlendi)" etiketi
+Edited --> Edited : PATCH
+
+Sent --> Deleted : DELETE\n(sahibi / ADMIN / MODERATOR)
+Edited --> Deleted : DELETE
+Deleted : deleted = true
+Deleted : fileUrl = null
+Deleted : content = "This message has been deleted"
+
+Sent --> [*] : kanal / sunucu / üye\nsilinince (cascade)
+Edited --> [*] : cascade
+Deleted --> [*] : cascade
+@enduml

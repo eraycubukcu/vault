@@ -1,0 +1,104 @@
+@startuml 03-component-architecture
+title Vault Chat - Bileşen (Mimari) Diyagramı
+skinparam componentStyle uml2
+
+actor Kullanıcı
+
+package "Tarayıcı (React 19 Client)" as Client {
+  component "Sayfalar / Server Components\n(app/...)" as Pages
+  component "ClerkProvider" as ClerkProv
+  component "ThemeProvider\n(next-themes)" as ThemeProv
+  component "SocketProvider\n(socket.io-client)" as SocketProv
+  component "QueryProvider\n(@tanstack/react-query)" as QueryProv
+  component "ModalProvider\n+ useModal (zustand)" as ModalProv
+  component "Chat bileşenleri\n(ChatMessages, ChatInput,\nChatItem, ChatHeader)" as Chat
+  component "useChatQuery\nuseChatSocket\nuseChatScroll" as Hooks
+  component "MediaRoom\n(@livekit/components-react)" as Media
+  component "FileUpload\n(@uploadthing/react)" as Upload
+  component "Navigation / Server\nSidebar bileşenleri" as Nav
+}
+
+package "Next.js Sunucusu" as NextSrv {
+  component "middleware.ts\n(clerkMiddleware)" as MW
+
+  package "App Router API (app/api)" {
+    component "/api/servers\n/api/servers/[id]\n/invite-code, /leave" as ServersAPI
+    component "/api/channels\n/api/channels/[id]" as ChannelsAPI
+    component "/api/members/[id]" as MembersAPI
+    component "/api/messages (GET)\n/api/direct-messages (GET)" as MsgGet
+    component "/api/livekit (GET)" as LKApi
+    component "/api/uploadthing" as UTApi
+  }
+
+  package "Pages Router API (pages/api/socket)" {
+    component "/api/socket/io\n(Socket.IO sunucusu)" as IO
+    component "/api/socket/messages\n/api/socket/messages/[id]" as SockMsg
+    component "/api/socket/direct-messages\n/api/socket/direct-messages/[id]" as SockDM
+  }
+
+  package "lib" {
+    component "currentProfile()\ncurrentProfilePages()\ninitialProfile()" as ProfileLib
+    component "getOrCreateConversation()" as ConvLib
+    component "db (PrismaClient)" as DB
+  }
+  component "actions.ts\n(web-push server actions)" as Actions
+}
+
+cloud "Clerk" as ClerkSvc
+cloud "LiveKit Cloud\n(WebRTC SFU)" as LiveKitSvc
+cloud "UploadThing" as UTSvc
+cloud "Web Push servisi" as PushSvc
+database "MongoDB" as Mongo
+
+Kullanıcı --> Pages
+Pages --> ClerkProv
+Pages --> ThemeProv
+Pages --> Nav
+Pages --> Chat
+Pages --> Media
+Chat --> Hooks
+Chat --> ModalProv
+Hooks --> QueryProv
+Hooks --> SocketProv
+ModalProv --> Upload
+
+Pages ..> MW : HTTP istekleri
+MW --> ClerkSvc : oturum doğrulama
+ClerkProv --> ClerkSvc
+
+Hooks --> MsgGet : fetch (cursor sayfalama)
+Chat --> SockMsg : axios POST/PATCH/DELETE
+Chat --> SockDM : axios POST/PATCH/DELETE
+ModalProv --> ServersAPI : axios
+ModalProv --> ChannelsAPI : axios
+ModalProv --> MembersAPI : axios
+SocketProv <--> IO : WebSocket\npath=/api/socket/io
+Media --> LKApi : token iste
+Media <--> LiveKitSvc : WebRTC
+Upload --> UTApi
+UTApi --> UTSvc
+Upload --> UTSvc : dosya yükleme
+
+SockMsg --> IO : io.emit(chat:{id}:messages[:update])
+SockDM --> IO : io.emit(...)
+
+ServersAPI --> ProfileLib
+ChannelsAPI --> ProfileLib
+MembersAPI --> ProfileLib
+MsgGet --> ProfileLib
+SockMsg --> ProfileLib
+SockDM --> ProfileLib
+Pages --> ConvLib
+ProfileLib --> ClerkSvc : auth() / getAuth() / currentUser()
+ProfileLib --> DB
+ConvLib --> DB
+ServersAPI --> DB
+ChannelsAPI --> DB
+MembersAPI --> DB
+MsgGet --> DB
+SockMsg --> DB
+SockDM --> DB
+DB --> Mongo
+LKApi ..> LiveKitSvc : AccessToken (JWT) imzalar
+Actions --> PushSvc : webpush.sendNotification
+@enduml

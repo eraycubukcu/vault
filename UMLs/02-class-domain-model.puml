@@ -1,0 +1,117 @@
+@startuml 02-class-domain-model
+title Vault Chat - Alan Modeli (prisma/schema.prisma)
+hide circle
+skinparam classAttributeIconSize 0
+
+enum MemberRole {
+  ADMIN
+  MODERATOR
+  GUEST
+}
+
+enum ChannelType {
+  TEXT
+  AUDIO
+  VIDEO
+}
+
+class Profile {
+  + id : String <<PK, uuid>>
+  + userID : String <<unique, Clerk id>>
+  + name : String
+  + imageUrl : String
+  + email : String
+  + createAt : DateTime
+  + updateAt : DateTime
+}
+
+class Server {
+  + id : String <<PK, uuid>>
+  + name : String
+  + imageUrl : String
+  + inviteCode : String <<unique>>
+  + profileId : String <<FK>>
+  + createAt : DateTime
+  + updateAt : DateTime
+}
+
+class Member {
+  + id : String <<PK, uuid>>
+  + role : MemberRole = GUEST
+  + profileId : String <<FK>>
+  + serverId : String <<FK>>
+  + createdAt : DateTime
+  + updatedAt : DateTime
+}
+
+class Channel {
+  + id : String <<PK, uuid>>
+  + name : String
+  + type : ChannelType = TEXT
+  + profileId : String <<FK>>
+  + serverId : String <<FK>>
+  + createdAt : DateTime
+  + updatedAt : DateTime
+}
+
+class Message {
+  + id : String <<PK, uuid>>
+  + messageID : String <<uuid>>
+  + content : String
+  + fileUrl : String [0..1]
+  + memberId : String <<FK>>
+  + channelId : String <<FK>>
+  + deleted : Boolean = false
+  + createdAt : DateTime
+  + updatedAt : DateTime
+}
+
+class Conversation {
+  + id : String <<PK, uuid>>
+  + memberOneId : String <<FK>>
+  + memberTwoId : String <<FK>>
+  --
+  unique(memberOneId, memberTwoId)
+}
+
+class DirectMessage {
+  + id : String <<PK, uuid>>
+  + content : String
+  + fileUrl : String [0..1]
+  + memberId : String <<FK>>
+  + conversationId : String <<FK>>
+  + deleted : Boolean = false
+  + createdAt : DateTime
+  + updatedAt : DateTime
+}
+
+Profile "1" *-- "0..*" Server : sahibi >
+Profile "1" *-- "0..*" Member : üyelikleri >
+Profile "1" *-- "0..*" Channel : oluşturduğu >
+
+Server "1" *-- "1..*" Member : members
+Server "1" *-- "1..*" Channel : channels
+
+Member "1" *-- "0..*" Message : yazar >
+Channel "1" *-- "0..*" Message : messages
+
+Member "1" *-- "0..*" Conversation : MemberOne
+Member "1" *-- "0..*" Conversation : MemberTwo
+Conversation "1" *-- "0..*" DirectMessage : directMessage
+Member "1" *-- "0..*" DirectMessage : yazar >
+
+Member ..> MemberRole
+Channel ..> ChannelType
+
+note right of Server
+  Oluşturulurken otomatik olarak
+  "general" kanalı ve sahibi için
+  ADMIN rolünde bir Member yaratılır.
+end note
+note bottom of Message
+  Silme yumuşak silmedir (soft delete):
+  deleted = true, fileUrl = null,
+  content = "This message has been deleted"
+end note
+note "Tüm ilişkiler onDelete: Cascade\nVeritabanı: MongoDB (Prisma)" as N1
+@enduml

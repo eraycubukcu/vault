@@ -1,0 +1,100 @@
+@startuml 05-package-structure
+title Vault Chat - Paket / Klasör Yapısı
+skinparam packageStyle folder
+
+package "app" as App {
+  package "(auth)" {
+    [sign-in]
+    [sign-up]
+  }
+  package "(home)" {
+    [home/page] as HomePage
+  }
+  package "(setup)" {
+    [page: ilk sunucuya yönlendir] as Setup
+  }
+  package "(invite)" {
+    [invite/inviteCode] as Invite
+  }
+  package "(main)" {
+    [layout: NavigationSideBar] as MainLayout
+    [servers/serverId/layout: ServerSidebar] as SrvLayout
+    [servers/serverId/channels/channelId] as ChPage
+    [servers/serverId/conversations/memberId] as ConvPage
+  }
+  package "api" as AppApi {
+    [servers]
+    [channels]
+    [members]
+    [messages]
+    [direct-messages]
+    [livekit]
+    [uploadthing] as apiUT
+  }
+  [layout.tsx: Provider'lar] as RootLayout
+  [actions.ts]
+  [manifest.ts]
+}
+
+package "pages/api/socket" as PagesApi {
+  [io]
+  [socket/messages]
+  [socket/direct-messages]
+}
+
+package "components" as Comps {
+  package "chat" {
+  }
+  package "modals" {
+    package "home-modals" {
+    }
+  }
+  package "navigation" {
+  }
+  package "server" {
+  }
+  package "home" {
+  }
+  package "ui" {
+    package "providers" {
+    }
+  }
+  [media-room]
+  [file-upload]
+  [emoji-picker]
+}
+
+package "hooks" as Hooks {
+  [use-chat-query]
+  [use-chat-socket]
+  [use-chat-scroll]
+  [use-model.store]
+  [use-origin]
+}
+
+package "lib" as Lib {
+  [db]
+  [current-profile]
+  [current-profile-pages]
+  [inital-profile]
+  [conversation]
+  [uploadthing] as libUT
+  [utils]
+}
+
+package "prisma" as Prisma {
+  [schema.prisma]
+}
+
+[middleware.ts] as MWFile
+[types.ts] as Types
+
+App ..> Comps
+App ..> Lib
+Comps ..> Hooks
+Comps ..> Lib
+Hooks ..> Comps : providers/socket-provider
+PagesApi ..> Lib
+PagesApi ..> Types
+Lib ..> Prisma
+@enduml

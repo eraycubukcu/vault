@@ -1,0 +1,44 @@
+@startuml 11-seq-direct-message
+title Özel Mesajlaşma (Conversation) Akışı
+autonumber
+
+actor Kullanıcı
+participant "MemberIdPage\n/servers/{sid}/conversations/{memberId}" as Page
+participant "getOrCreateConversation()" as Conv
+database "MongoDB" as DB
+participant "ChatMessages / ChatInput" as Chat
+participant "GET /api/direct-messages" as Get
+participant "/api/socket/direct-messages\n?conversationId" as Post
+participant "Socket.IO Server" as IO
+participant "MediaRoom" as MR
+
+Kullanıcı -> Page : sunucudaki bir üyeye tıkla
+Page -> DB : member.findFirst({ serverId, profileId })
+note right : currentMember
+alt üye değil
+  Page --> Kullanıcı : redirect("/home")
+end
+Page -> Conv : (currentMember.id, memberId)
+Conv -> DB : conversation.findFirst(one=A, two=B)
+alt bulunamadı
+  Conv -> DB : conversation.findFirst(one=B, two=A)
+end
+alt hâlâ yok
+  Conv -> DB : conversation.create({ memberOneId, memberTwoId })
+end
+Conv --> Page : conversation (+ memberOne/Two.profile)
+Page -> Page : otherMember belirle
+
+alt ?video yok
+  Page -> Chat : render(apiUrl=/api/direct-messages,\n socketUrl=/api/socket/direct-messages)
+  Chat -> Get : ?conversationId[&cursor]
+  Get --> Chat : { items, nextCursor }
+  Kullanıcı -> Chat : mesaj gönder
+  Chat -> Post : axios.post({ content, fileUrl })
+  Post -> DB : directMessage.create(...)
+  Post -> IO : emit("chat:{conversationId}:messages")
+  IO ->> Chat : yeni mesaj (her iki taraf)
+else ?video=true
+  Page -> MR : MediaRoom(chatId=conversation.id, video, audio)
+end
+@enduml

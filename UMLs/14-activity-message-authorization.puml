@@ -1,0 +1,51 @@
+@startuml 14-activity-message-authorization
+title Mesaj API'si - Yetkilendirme Etkinlik Diyagramı\n(/api/socket/messages/[messageId])
+
+start
+if (method PATCH veya DELETE?) then (hayır)
+  :405 Method Not Allowed;
+  stop
+endif
+:currentProfilePages(req);
+if (profile var?) then (hayır)
+  :401 Unauthorized;
+  stop
+endif
+if (serverId ve channelId var?) then (hayır)
+  :400 Bad Request;
+  stop
+endif
+:Kullanıcının üye olduğu sunucuyu bul;
+if (sunucu bulundu?) then (hayır)
+  :404 Server Not Found;
+  stop
+endif
+:Sunucuya ait kanalı bul;
+if (kanal bulundu?) then (hayır)
+  :404 Channel Not Found;
+  stop
+endif
+:member = profile'a ait üyelik;
+:Mesajı bul (id, channelId);
+if (mesaj var ve silinmemiş?) then (hayır)
+  :404 Message Not Found;
+  stop
+endif
+if (sahibi VEYA ADMIN VEYA MODERATOR?) then (hayır)
+  :401 Unauthorized;
+  stop
+endif
+if (method?) then (DELETE)
+  :Yumuşak silme
+  deleted=true, fileUrl=null;
+else (PATCH)
+  if (mesaj sahibi?) then (hayır)
+    :401 Unauthorized;
+    stop
+  endif
+  :content güncelle;
+endif
+:io.emit("chat:{channelId}:messages:update");
+:200 OK (message);
+stop
+@enduml

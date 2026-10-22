@@ -4,6 +4,46 @@ Otomatik testlerin kapsamadığı, canlı Clerk + MongoDB (ve gerektiğinde ikin
 
 ---
 
+## Bekleyen elle testler (yapılacaklar)
+
+Aşağıdaki adımların hiçbiri için kayıtlı bir elle test sonucu yok. Paketlerin ilerleme notlarında yalnızca iki gözlem var:
+- Paket 2'nin elle testi çalıştırılmadı.
+- Paket 4 sonrasında (F-32 düzeltmesi) dev modunda iki pencerede mesajların yenilemeden geldiği görüldü.
+
+Bu yüzden tüm adımlar açık bırakıldı. Daha önce yaptığınız bir adım varsa yalnızca o kutuyu işaretleyin.
+
+**Nasıl çalıştırılır:**
+- **Dev:** `npm run dev`.
+- **Prod:** `npm run build && npm start`. `.env` içindeki `NEXT_PUBLIC_SITE_URL` build sırasında pakete gömülür; build'den önce `http://localhost:3000` olmalı.
+- Paket 2 ve 3 için dev yeterli. Socket paketleri (4 ve 5) iki modda da denenmeli.
+
+Bir adım başarısız olursa adım numarasını, modu (dev/prod), tarayıcı konsolunu, sunucu konsolunu ve WS Mesajlar görünümünü not edin.
+
+| Paket | Adımlar | dev | prod |
+|---|---|---|---|
+| 2: profil ve e-posta gizleme | 1–6 | [ ] | — |
+| 3: mesaj geçmişi erişimi | 1–7 | [ ] | — |
+| 4: socket kimlik ve odalar | 1–2 (token'sız red, gösterge) | [ ] | [ ] |
+| 4 | 3 (üye canlı mesaj alıyor; dev'de bir kez gözlendi, düzenleme/silme dahil tam tekrar gerekli) | [ ] | [ ] |
+| 4 | 4–7 (üye olmayan almıyor, ham WebSocket `ok:false`, özel sohbet, sohbet değiştirme) | [ ] | [ ] |
+| 4 | 8–9 (atılan ve ayrılan üye, çok sekme) | [ ] | [ ] |
+| 4 | 10–11 (yeniden bağlanma, uzun oturum) | [ ] | [ ] |
+| 4 | 12 (ses/görüntü kanalı) | [ ] | [ ] |
+| 4 | 13 (WebSocket 101 ile açık kalıyor, F-32; henüz gözle doğrulanmadı) | [ ] | [ ] |
+| 5: yeniden doğrulama ve silinen odalar | 1–6 (kanal/sunucu silme, F-27) | [ ] | [ ] |
+| 5 | 7–8 (30 sn'de bir `auth:refresh`, arka plan sekmesi) | [ ] | [ ] |
+| 5 | 9 (Clerk Dashboard'dan oturum iptali) | [ ] | [ ] |
+| 5 | 10 (hesap değiştirme; Multi-session kapalıysa "uygulanamaz" yazın) | [ ] | [ ] |
+| 5 | 11 (sunucu yeniden başlatma) | [ ] | [ ] |
+
+**Önerilen sıra:**
+1. Paket 4'ün 13. adımı: diğer socket adımları buna bağlı.
+2. Paket 4'ün 1–3. adımları.
+3. Paket 5'in 7. adımı.
+4. Geri kalanlar.
+
+---
+
 ## Paket 2 — Profil erişimi ve e-postanın gizlenmesi (Görev 2: F-12, F-02 ek)
 
 > Not: Bu liste, paket 2'nin oturum raporu yerine `docs/plan.md` Görev 2 (Adım 1'deki elle doğrulama senaryosu) ve o paketin ilerleme notlarındaki kararlardan yeniden derlendi.

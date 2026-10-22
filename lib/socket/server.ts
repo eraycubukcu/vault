@@ -24,26 +24,39 @@ export function registerSocketHandlers(io: Server): void {
         const profileId: string = socket.data.profileId;
         socket.join(profileRoom(profileId));
 
+        // Bu socket'in şu an açık tutmak istediği sohbetler. Kontrol sürerken gelen
+        // chat:leave, geç tamamlanan join'in odaya sokmasını engeller.
+        const wanted = new Set<string>();
+
         // Odaya katılmak istemcinin isteğiyle değil, sunucudaki yetki kontrolüyle olur.
         socket.on("chat:join", async (chatId: unknown, ack?: (r: { ok: boolean }) => void) => {
             const reply = typeof ack === "function" ? ack : () => {};
             if (typeof chatId !== "string" || !chatId) {
                 return reply({ ok: false });
             }
+            wanted.add(chatId);
             try {
-                if (!(await canAccessChat(profileId, chatId))) {
+                if (!(await canAccessChat(profileId, chatId)) || !wanted.has(chatId)) {
                     return reply({ ok: false });
                 }
                 socket.join(chatRoom(chatId));
+                // İlk kontrol ile join arasında üyelik silinmiş (ve leaveServerRooms bu socket'i
+                // henüz odada bulamamış) olabilir; tekrar kontrol edip gerekirse geri al.
+                if (!(await canAccessChat(profileId, chatId)) || !wanted.has(chatId)) {
+                    socket.leave(chatRoom(chatId));
+                    return reply({ ok: false });
+                }
                 reply({ ok: true });
             } catch (error) {
                 console.log("[SOCKET_CHAT_JOIN]", error);
+                socket.leave(chatRoom(chatId));
                 reply({ ok: false });
             }
         });
 
         socket.on("chat:leave", (chatId: unknown) => {
             if (typeof chatId === "string") {
+                wanted.delete(chatId);
                 socket.leave(chatRoom(chatId));
             }
         });

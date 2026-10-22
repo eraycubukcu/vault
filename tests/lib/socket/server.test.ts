@@ -102,6 +102,35 @@ describe("registerSocketHandlers", () => {
         expect(socket.join).toHaveBeenCalledWith("chat:c1");
     });
 
+    // İnceleme bulgusu 1: yetki kontrolü sürerken üyelik silinirse (atılma) katılım geri alınmalı.
+    it("chat:join katıldıktan sonra yetki kalkmışsa odadan çıkarır ve ok:false döner", async () => {
+        canAccessChat.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+        const { socket, handlers } = connect("p1");
+        const ack = vi.fn();
+        await handlers["chat:join"]("c1", ack);
+        expect(canAccessChat).toHaveBeenCalledTimes(2);
+        expect(socket.join).toHaveBeenCalledWith("chat:c1");
+        expect(socket.leave).toHaveBeenCalledWith("chat:c1");
+        expect(socket.join.mock.invocationCallOrder.at(-1)).toBeLessThan(socket.leave.mock.invocationCallOrder.at(-1));
+        expect(ack).toHaveBeenCalledWith({ ok: false });
+    });
+
+    // İnceleme bulgusu 3: kontrol sürerken gelen chat:leave, geç tamamlanan join'i iptal etmeli.
+    it("yetki kontrolü sürerken chat:leave gelirse odaya katmaz", async () => {
+        let grant!: (value: boolean) => void;
+        canAccessChat.mockImplementationOnce(() => new Promise((resolve) => { grant = resolve; }));
+        canAccessChat.mockResolvedValue(true);
+        const { socket, handlers } = connect("p1");
+        socket.join.mockClear();
+        const ack = vi.fn();
+        const pending = handlers["chat:join"]("c1", ack);
+        handlers["chat:leave"]("c1");
+        grant(true);
+        await pending;
+        expect(socket.join).not.toHaveBeenCalledWith("chat:c1");
+        expect(ack).toHaveBeenCalledWith({ ok: false });
+    });
+
     it("chat:leave odadan çıkarır", () => {
         const { socket, handlers } = connect("p1");
         handlers["chat:leave"]("c1");

@@ -190,6 +190,7 @@ describe("üyelik bitince odadan çıkarma", () => {
         await barrier(
             { client: viewer.client, profileId: viewerProfile.id },
             { client: other.client, profileId: otherProfile.id },
+            { client: otherTab2.client, profileId: otherProfile.id },
         );
         expect(events(viewer.received, key)).toHaveLength(1);
         expect(events(other.received, key)).toEqual([]);
@@ -232,7 +233,10 @@ describe("üyelik bitince odadan çıkarma", () => {
     });
 
     it("atma işlemi başarısız olursa (sahibi değil) kimse odadan çıkarılmaz", async () => {
-        const { other } = await viewerAndOtherInRooms();
+        // Sahibi olmayan "other", "viewer"ı atmaya çalışıyor: hedef (viewer) odada kalmalı.
+        const { viewer, other } = await viewerAndOtherInRooms();
+        const viewerTab2 = await connectAs(viewerProfile);
+        expect(await join(viewerTab2.client, channel.id)).toEqual({ ok: true });
         currentProfile.mockResolvedValue(otherProfile);
         db.server.update.mockRejectedValue(new Error("Record to update not found."));
         vi.spyOn(console, "log").mockImplementation(() => {});
@@ -243,7 +247,13 @@ describe("üyelik bitince odadan çıkarma", () => {
         expect(res.status).toBe(500);
         const key = `chat:${channel.id}:messages`;
         emitToChat(channel.id, key, { id: "still-here" });
-        await barrier({ client: other.client, profileId: otherProfile.id });
+        await barrier(
+            { client: viewer.client, profileId: viewerProfile.id },
+            { client: viewerTab2.client, profileId: viewerProfile.id },
+            { client: other.client, profileId: otherProfile.id },
+        );
+        expect(events(viewer.received, key)).toHaveLength(1);
+        expect(events(viewerTab2.received, key)).toHaveLength(1);
         expect(events(other.received, key)).toHaveLength(1);
     });
 });

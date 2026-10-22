@@ -27,6 +27,26 @@ export const useSocket = () => {
 export const SocketProvider = ({children}: { children: React.ReactNode })=>{
     const [socket,setSocket]=useState(null);
     const [isConnected,setIsConnected]=useState(false)
+    // useAuth() sunucuda <ClerkProvider dynamic> olmadan hata fırlatır; socket zaten yalnızca
+    // istemcide açıldığından bağlantıyı yöneten bileşen mount sonrasında render edilir.
+    const [isMounted,setIsMounted]=useState(false)
+
+    useEffect(()=>{
+        setIsMounted(true)
+    },[])
+
+    return(
+        <SocketContext.Provider value={{socket,isConnected}}>
+            {isMounted&&<SocketConnection setSocket={setSocket} setIsConnected={setIsConnected}/>}
+            {children}
+        </SocketContext.Provider>
+    )
+}
+
+const SocketConnection = ({setSocket,setIsConnected}:{
+    setSocket:(socket:any)=>void;
+    setIsConnected:(isConnected:boolean)=>void;
+})=>{
     const {isSignedIn,getToken}=useAuth()
     // getToken referansı değişse bile bağlantı yeniden kurulmasın diye ref'te tutulur.
     const getTokenRef=useRef(getToken)
@@ -68,9 +88,7 @@ export const SocketProvider = ({children}: { children: React.ReactNode })=>{
             setSocket(null)
             setIsConnected(false)
         }
-    },[isSignedIn])
+    },[isSignedIn,setSocket,setIsConnected])
 
-    return(
-        <SocketContext.Provider value={{socket,isConnected}}>{children}</SocketContext.Provider>
-    )
+    return null
 }

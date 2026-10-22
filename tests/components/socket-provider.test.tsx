@@ -61,6 +61,19 @@ describe("SocketProvider", () => {
         }
     });
 
+    it("çıkış yapılınca eski socket'i kapatır, yeniden girişte yenisini açar", () => {
+        const { rerender } = render(<SocketProvider><div /></SocketProvider>);
+        expect(ioMock).toHaveBeenCalledTimes(1);
+
+        auth.isSignedIn = false;
+        rerender(<SocketProvider><div /></SocketProvider>);
+        expect(fake.disconnect).toHaveBeenCalledTimes(1);
+
+        auth.isSignedIn = true;
+        rerender(<SocketProvider><div /></SocketProvider>);
+        expect(ioMock).toHaveBeenCalledTimes(2);
+    });
+
     it("unmount olunca bağlantıyı kapatır", () => {
         const { unmount } = render(<SocketProvider><div /></SocketProvider>);
         unmount();

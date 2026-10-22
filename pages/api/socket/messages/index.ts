@@ -1,5 +1,6 @@
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
+import { messageInclude } from "@/lib/public-profile";
 import { NextApiResponseServerIo } from "@/types";
 import { NextApiRequest } from "next";
 
@@ -68,13 +69,7 @@ export default async function handler(
                 channelId:channelId as string,
                 memberId:member.id,
             },
-            include:{
-                member:{
-                    include:{
-                        profile:true,
-                    }
-                }
-            }
+            include: messageInclude
         })
 
         const channelKey=`chat:${channelId}:messages`;

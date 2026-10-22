@@ -1,5 +1,6 @@
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
+import { messageInclude } from "@/lib/public-profile";
 import { DirectMessage } from "@prisma/client";
 import { NextResponse } from "next/server";
 
@@ -31,13 +32,7 @@ export async function GET(req: Request) {
                 where: {
                     conversationId: conversationId
                 },
-                include: {
-                    member: {
-                        include: {
-                            profile: true,
-                        }
-                    }
-                },
+                include: messageInclude,
                 orderBy: {
                     createdAt: "desc",
                 }
@@ -49,13 +44,7 @@ export async function GET(req: Request) {
                 where: {
                     conversationId,
                 },
-                include: {
-                    member: {
-                        include: {
-                            profile: true
-                        }
-                    }
-                },
+                include: messageInclude,
                 orderBy: {
                     createdAt: "desc"
                 }

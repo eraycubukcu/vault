@@ -1,7 +1,7 @@
 import {auth} from "@clerk/nextjs/server"
 import {db} from "@/lib/db"
-import { initialProfile } from "./inital-profile"
 
+// Salt okunur: profil yoksa null döner; hiçbir koşulda yazmaz veya yönlendirmez.
 export const currentProfile = async ()=>{
     const {userId}=await auth()
     if(!userId){
@@ -13,8 +13,5 @@ export const currentProfile = async ()=>{
             userID:userId
         }
     })
-    if(profile){
-        return profile;
-    }
-    return initialProfile()
+    return profile ?? null;
 }

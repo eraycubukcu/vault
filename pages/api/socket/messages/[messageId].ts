@@ -1,5 +1,6 @@
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
+import { messageInclude } from "@/lib/public-profile";
 import { NextApiResponseServerIo } from "@/types";
 import { MemberRole } from "@prisma/client";
 import { NextApiRequest } from "next";
@@ -62,13 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponseS
                 id: messageId as string,
                 channelId: channelId as string,
             },
-            include: {
-                member: {
-                    include: {
-                        profile: true,
-                    }
-                }
-            }
+            include: messageInclude
         })
 
         if (!message || message.deleted) {
@@ -94,13 +89,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponseS
                     content: "This message has been deleted",
                     deleted: true,
                 },
-                include: {
-                    member: {
-                        include: {
-                            profile: true
-                        }
-                    }
-                }
+                include: messageInclude
             })
         }
         if (req.method === "PATCH") {
@@ -114,13 +103,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponseS
                 data: {
                     content,
                 },
-                include: {
-                    member: {
-                        include: {
-                            profile: true
-                        }
-                    }
-                }
+                include: messageInclude
             })
         }
 

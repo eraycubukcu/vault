@@ -1,5 +1,6 @@
 import { currentProfile } from "@/lib/current-profile"
 import { db } from "@/lib/db";
+import { membersWithPublicProfile, withViewerEmail } from "@/lib/public-profile";
 import { NextResponse } from "next/server"
 
 export async function PATCH(
@@ -45,16 +46,14 @@ export async function PATCH(
             },
             include: {
                 members: {
-                    include: {
-                        profile: true,
-                    },
+                    ...membersWithPublicProfile,
                     orderBy: {
                         role: "asc"
                     }
                 }
             }
         })
-        return NextResponse.json(server)
+        return NextResponse.json(withViewerEmail(server, profile))
     }
     catch (error) {
         console.log("[MEMBERRS_ID_PATCH]", error)
@@ -96,16 +95,14 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ membe
             },
             include: {
                 members: {
-                    include: {
-                        profile: true,
-                    },
+                    ...membersWithPublicProfile,
                     orderBy: {
                         role: "asc",
                     }
                 }
             }
         })
-        return NextResponse.json(server)
+        return NextResponse.json(withViewerEmail(server, profile))
     }
     catch (error) {
         console.log("[MEMBER_ID_DELETE]", error)

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { publicProfileSelect } from "@/lib/public-profile";
 
 export const getOrCreateConversation = async (memberOneId: string, memberTwoId: string) => {
     var conversation = await findConversation(memberOneId, memberTwoId) || await findConversation(memberTwoId, memberOneId)
@@ -21,12 +22,12 @@ const findConversation = async (memberOneId: string, memberTwoId: string) => {
             include: {
                 memberOne: {
                     include: {
-                        profile: true
+                        profile: { select: publicProfileSelect },
                     }
                 },
                 memberTwo: {
                     include: {
-                        profile: true
+                        profile: { select: publicProfileSelect },
                     }
                 }
             }
@@ -47,12 +48,12 @@ const createNewConversation = async (memberOneId: string, memberTwoId: string) =
             include: {
                 memberOne: {
                     include: {
-                        profile: true,
+                        profile: { select: publicProfileSelect },
                     }
                 },
                 memberTwo: {
                     include: {
-                        profile: true,
+                        profile: { select: publicProfileSelect },
                     }
                 }
             }

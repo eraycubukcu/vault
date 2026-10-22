@@ -1,14 +1,13 @@
 import {currentUser} from "@clerk/nextjs/server"
 import {db} from "@/lib/db";
-import { RedirectToSignIn } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
 
-
-export const initialProfile = async ()=>{
+// Profil oluşturan tek giriş noktası; yalnızca sayfalardan (setup, davet) çağrılır.
+// API route'ları salt okunur `currentProfile()` kullanır.
+export const getOrCreateProfile = async ()=>{
     const user=await currentUser()
     if(!user){
         return redirect("/home");
-        // return RedirectToSignIn
     }
     const profile=await db.profile.findUnique({
         where:{

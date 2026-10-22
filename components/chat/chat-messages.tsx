@@ -1,6 +1,7 @@
 "use client"
 
-import { Member, Message, Profile } from "@prisma/client";
+import { Member, Message } from "@prisma/client";
+import { PublicProfile } from "@/lib/public-profile";
 import { ChatWelcome } from "./chat-welcome";
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { Loader2, ServerCrash } from "lucide-react";
@@ -29,7 +30,7 @@ interface ChatMessagesProps {
 
 type MessageWithMemberWithProfile = Message & {
     member: Member & {
-        profile: Profile
+        profile: PublicProfile
     }
 }
 

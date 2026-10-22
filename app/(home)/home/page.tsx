@@ -1,6 +1,5 @@
 "use client"
 import { currentUser } from "@clerk/nextjs/server"
-import { initialProfile } from "@/lib/inital-profile";
 import { db } from "@/lib/db"
 import { read } from "fs";
 import { redirect } from "next/navigation";

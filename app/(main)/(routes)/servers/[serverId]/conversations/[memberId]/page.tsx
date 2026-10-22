@@ -35,9 +35,6 @@ const MemberIdPage = async ({
         where: {
             serverId: serverId,
             profileId: profile.id
-        },
-        include: {
-            profile: true
         }
     })
     if (!currentMember) {

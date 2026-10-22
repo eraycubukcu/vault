@@ -6,7 +6,8 @@ import qs from "query-string";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
-import { Member, MemberRole, Profile } from "@prisma/client";
+import { Member, MemberRole } from "@prisma/client";
+import { PublicProfile } from "@/lib/public-profile";
 import { UserAvatar } from "../user-avatar";
 import { ActionTooltip } from "../action-tooltip";
 import { Edit, FileIcon, ShieldAlert, ShieldCheck, Trash } from "lucide-react";
@@ -31,7 +32,7 @@ interface ChatItemProps {
     id: string;
     content: string;
     member: Member & {
-        profile: Profile;
+        profile: PublicProfile;
     };
     timestamp: string;
     fileUrl: string | null;

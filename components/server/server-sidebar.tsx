@@ -1,5 +1,6 @@
 import { currentProfile } from "@/lib/current-profile"
 import { db } from "@/lib/db"
+import { membersWithPublicProfile, withViewerEmail } from "@/lib/public-profile"
 import { ChannelType, MemberRole } from "@prisma/client"
 import { redirect } from "next/navigation"
 import { ServerHeader } from "./server-header"
@@ -36,7 +37,7 @@ export const ServerSidebar = async ({ serverId }: ServerSidebarProps) => {
         return redirect("/home")
     }
 
-    const server = await db.server.findUnique({
+    const serverData = await db.server.findUnique({
         where: {
             id: serverId,
         },
@@ -47,15 +48,15 @@ export const ServerSidebar = async ({ serverId }: ServerSidebarProps) => {
                 }
             },
             members: {
-                include: {
-                    profile: true,
-                },
+                ...membersWithPublicProfile,
                 orderBy: {
                     role: "asc",
                 }
             }
         }
     })
+
+    const server = serverData && withViewerEmail(serverData, profile)
 
     const textChannels = server?.channels.filter((channel) => channel.type === ChannelType.TEXT)
     const audioChannels = server?.channels.filter((channel) => channel.type === ChannelType.AUDIO)

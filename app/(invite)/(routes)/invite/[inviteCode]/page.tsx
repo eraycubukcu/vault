@@ -1,6 +1,5 @@
-import { currentProfile } from "@/lib/current-profile";
+import { getOrCreateProfile } from "@/lib/get-or-create-profile";
 import { db } from "@/lib/db";
-import { RedirectToSignIn } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
 
 interface InviteCodePageProps {
@@ -10,13 +9,11 @@ interface InviteCodePageProps {
 };
 
 const InviteCodePage = async ({ params }: InviteCodePageProps) => {
-    const profile = await currentProfile()
+    // Davet linkiyle ilk kez gelen kullanıcının henüz profili yok; burada oluşturulur.
+    const profile = await getOrCreateProfile()
 
     const { inviteCode } = await params
 
-    if (!profile) {
-        return <RedirectToSignIn/>;
-    }
     if (!inviteCode) {
         return redirect("/home");
     }

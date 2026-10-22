@@ -24,7 +24,7 @@ Required env vars: `DATABASE_URL` (MongoDB), Clerk keys, `LIVEKIT_API_KEY`, `LIV
 
 ## Architecture
 
-**Two routers on purpose.** Regular CRUD lives in App Router handlers under `app/api/*`. Anything that must broadcast over Socket.IO lives in the Pages Router under `pages/api/socket/*`, because only Pages API handlers get access to the underlying Node HTTP server (`res.socket.server.io`, typed as `NextApiResponseServerIo` in `types.ts`). `pages/api/socket/io.ts` lazily attaches the Socket.IO server on first request. This requires a long-running Node process — it will not work on serverless deployments.
+**Two routers on purpose.** Regular CRUD lives in App Router handlers under `app/api/*`. Anything that must broadcast over Socket.IO lives in the Pages Router under `pages/api/socket/*`, because only Pages API handlers get access to the underlying Node HTTP server (`res.socket.server.io`, typed as `NextApiResponseServerIo` in `types.ts`). `pages/api/socket/io.ts` lazily attaches the Socket.IO server on first request; the client fetches it before connecting. Socket.IO itself listens on `/api/socket/ws` (`lib/socket/path.ts`), a path with no route: Next closes WebSocket upgrades whose path matches a route (F-32). This requires a long-running Node process — it will not work on serverless deployments.
 
 **Auth/profile.** Clerk (`middleware.ts`) protects everything except `/home`, `/sign-in`, `/sign-up`, `/api/uploadthing`, `/`. Clerk users map to a `Profile` row via `userID`. Use `lib/current-profile.ts` (`currentProfile()`) in App Router code and `lib/current-profile-pages.ts` (`currentProfilePages(req)`) in Pages API handlers. `lib/inital-profile.ts` (sic) creates the Profile on first visit (called from `app/(setup)/page.tsx`).
 

@@ -52,6 +52,7 @@ Doğrulama durumu:
 | F-29 | 🔵 | Kanal ya da sunucu silinince socket'ler odalarda kalıyor |
 | F-30 | 🔵 | Mesaj handler'ları oda adını veritabanı satırından değil query'den alıyor |
 | F-31 | 🔵 | ~~`/home` sayfası `async` tanımlı bir Client Component~~ (Paket 4 sonrası düzeltildi) |
+| F-32 | 🔴 | ~~Next, socket'in WebSocket upgrade'ini kapatıyor; `chat:join` sunucuya ulaşmıyor, canlı mesajlar gelmiyor~~ (Paket 4 sonrası düzeltildi) |
 
 ---
 
@@ -68,7 +69,7 @@ Doğrulama durumu:
 - **Kanıt:**
   - Sunucu `io.emit(key, message)` kullanıyor; bu, olayı bağlı **tüm** soketlere gönderir. Oda (`join`/`to`) kavramı hiç yok.
   - Socket sunucusunda bağlantıyı doğrulayan bir middleware (`io.use`) yok.
-  - `/api/socket/io` yolu `middleware.ts` matcher'ına girse de WebSocket upgrade isteği Clerk tarafından korunmuyor.
+  - ~~`/api/socket/io` yolu `middleware.ts` matcher'ına girse de WebSocket upgrade isteği Clerk tarafından korunmuyor.~~ Düzeltme: Next upgrade isteğinde de middleware'i çalıştırıyor (bkz. F-32).
 - **Etki:** Bağlanan her istemci, tüm kanalların ve tüm özel sohbetlerin yeni, düzenlenen ve silinen mesajlarını (gönderenin profil bilgileri ve e-posta dahil) canlı alır. Bunun için tarayıcı konsolunda `socket.onAny(console.log)` yazmak yeterli.
 - **Ek:** Mesaj payload'ı `member.profile` içeriyor. Bu da `email` alanının diğer kullanıcılara gitmesi demek. Aynı durum F-01'deki GET yanıtları için de geçerli.
 - **Durum:** Kodda doğrulandı.
@@ -318,3 +319,13 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
   - `fad47e6` (2025-01-28) commit'inde `"use client"` eklendiğinden beri var. Paket 4'teki SSR hatası (`08ad1bc` ile düzeltildi) sayfanın render edilmesini engellediği için o sırada görünmüyordu.
 - **Etki:** Geliştirme ortamında konsol hatası ve gereksiz yeniden render. Sayfa içeriği yine de gösteriliyor.
 - **Durum:** Kodda doğrulandı, testte yeniden üretildi. Düzeltildi: `async` ve kullanılmayan import'lar kaldırıldı (`tests/app/home-page.test.tsx`).
+
+### F-32: Next, socket'in WebSocket upgrade'ini kapatıyor; `chat:join` sunucuya ulaşmıyor
+- **Yer:** `lib/socket/server.ts` (`SOCKET_PATH = "/api/socket/io"`), `pages/api/socket/io.ts`, `components/ui/providers/socket-provider.tsx`
+- **Kanıt:**
+  - Socket.IO, Pages route'u olan `/api/socket/io` yolunda dinliyordu. Next'in upgrade işleyicisi (`node_modules/next/dist/server/lib/router-server.js:496`) önce middleware'i çalıştırıyor; geçerli Clerk oturumu olan istek route aramasına devam ediyor, route bulununca `if (matchedOutput) return socket.end()` ile soket kapatılıyor.
+  - Elle testte `socket.end()` çağrısının stack'i loglandı: her upgrade 10–40 ms sonra `upgradeHandler` tarafından kapatılıyor. Oturum çerezi olmayan istekte middleware reddettiği için route aranmıyor ve soket kapanmıyor; bu yüzden Node'dan yapılan denemede sorun görünmedi.
+  - Soket, istemci upgrade için polling'i duraklattıktan sonra kapanırsa engine.io-client bir daha istek göndermiyor: `chat:join` ve pong sunucuya gitmiyor, oda boş kalıyor (`roomSockets: []`), bağlantı `ping timeout` ile kopuyor. Erken kapanırsa istemci polling'e dönüp çalışıyor; sorun bu yüzden aralıklı görünüyordu.
+  - d9d224d öncesinde de soket kapatılıyordu; ancak `io.emit` istemciden sunucuya paket gerektirmediği için fark edilmedi.
+- **Etki:** Gerçek zamanlı mesajlar çoğu zaman F5 yapılmadan görünmüyor.
+- **Durum:** Elle testte loglarla doğrulandı. Düzeltildi: Socket.IO route'u olmayan `/api/socket/ws` yolunda dinliyor (`lib/socket/path.ts`); `/api/socket/io` yalnızca sunucuyu başlatıyor ve istemci bağlanmadan önce (ve her yeniden bağlanma denemesinde) bu uca istek atıyor. Yolun bir route ile eşleşmemesi `tests/lib/socket/path.test.ts` ile korunuyor. Elle testte mesajlar yenilemeden geliyor; WebSocket'in 101 ile açık kaldığı (elle-test 13. adım) henüz gözle doğrulanmadı.

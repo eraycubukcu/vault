@@ -38,16 +38,16 @@ Otomatik testlerin kapsamadığı, canlı Clerk + MongoDB (ve gerektiğinde ikin
 
 **Hazırlık:** `npm run dev`. İki ayrı tarayıcı kullanın (ör. Chrome ve Firefox; ya da bir normal ve bir gizli pencere). Hesaplar: **A** (sunucu sahibi), **B** (üye), **C** (üye değil). C için üçüncü bir tarayıcı profili gerekir; yoksa B'nin tarayıcısında çıkış yapıp C ile girin.
 
-Tarayıcı konsolunda olayları görmek için: React DevTools olmadan socket'e erişim yok. Bu yüzden **Ağ sekmesi → WS → `/api/socket/io` bağlantısı → Mesajlar** görünümünü kullanın. Gelen her olay `42["chat:...",...]` biçiminde görünür.
+Tarayıcı konsolunda olayları görmek için: React DevTools olmadan socket'e erişim yok. Bu yüzden **Ağ sekmesi → WS → `/api/socket/ws` bağlantısı → Mesajlar** görünümünü kullanın. Gelen her olay `42["chat:...",...]` biçiminde görünür.
 
-1. **Token'sız bağlantı reddediliyor:** Çıkış yapılmış bir pencerede `/home` açın → Ağ sekmesinde `/api/socket/io` isteği **hiç açılmamalı** (oturum yokken istemci bağlanmaz). Konsolda `const ws = new WebSocket(`ws://${location.host}/api/socket/io/?EIO=4&transport=websocket`); ws.onmessage = (e) => { console.log(e.data); if (e.data.startsWith("0{")) ws.send("40"); };` çalıştırın → token gönderilmediği için sunucu `44{"message":"unauthorized"}` dönmeli.
+1. **Token'sız bağlantı reddediliyor:** Çıkış yapılmış bir pencerede `/home` açın → Ağ sekmesinde `/api/socket/io` ve `/api/socket/ws` istekleri **hiç açılmamalı** (oturum yokken istemci bağlanmaz). Konsolda `const ws = new WebSocket(`ws://${location.host}/api/socket/ws/?EIO=4&transport=websocket`); ws.onmessage = (e) => { console.log(e.data); if (e.data.startsWith("0{")) ws.send("40"); };` çalıştırın → token gönderilmediği için sunucu `44{"message":"unauthorized"}` dönmeli.
 2. **Bağlantı göstergesi:** A ile giriş yapın ve bir kanalı açın → sağ üstteki socket göstergesi "canlı" (yeşil) olmalı. WS mesajlarında giden `42X["chat:join","<kanalId>"]` ve dönen `43X[{"ok":true}]` görülmeli.
 3. **Üye canlı mesaj alıyor:** B, A'nın sunucusuna davet linkiyle katılır. İki tarayıcıda aynı `general` kanalını açın. A bir mesaj yazsın → B'de **yenilemeden** görünmeli. Düzenleme ve silme de B'de anında yansımalı.
 4. **Üye olmayan almıyor:** C ile giriş yapın (A'nın sunucusuna üye değil). C'nin tarayıcısında kendi sunucusunun bir kanalını açın ve WS mesajlarını izleyin. A, `general` kanalına mesaj yazsın → C'nin WS akışında `chat:<A'nın kanalId>:messages` olayı **görünmemeli**.
 5. **İstemcinin "odaya katıl" demesi yetmiyor:** C'nin tarayıcısında konsolu açıp aşağıdakini çalıştırın (`<kanalId>` yerine A'nın `general` kanalının kimliğini yazın):
    ```js
    const t = await window.Clerk.session.getToken();
-   const ws = new WebSocket(`ws://${location.host}/api/socket/io/?EIO=4&transport=websocket`);
+   const ws = new WebSocket(`ws://${location.host}/api/socket/ws/?EIO=4&transport=websocket`);
    ws.onmessage = (e) => {
      console.log(e.data);
      if (e.data === "2") ws.send("3");                                    // ping/pong
@@ -63,3 +63,4 @@ Tarayıcı konsolunda olayları görmek için: React DevTools olmadan socket'e e
 10. **Ağ kesintisi ve yeniden bağlanma:** B kanaldayken `npm run dev` sürecini durdurup 5 saniye sonra yeniden başlatın (Chrome'un "Çevrimdışı" ayarı açık WebSocket'i her sürümde koparmaz) → gösterge önce kırmızı sonra yeşil olmalı; WS'de yeni bağlantıda tekrar `chat:join` görülmeli. A'nın yazdığı yeni mesaj B'ye canlı gelmeli.
 11. **Uzun oturum (token yenileme):** B'nin sekmesini 2 dakikadan uzun açık bırakın (Clerk token'ı ~60 sn geçerli), sonra 10. adımdaki gibi sunucuyu yeniden başlatın → yeniden bağlanma başarılı olmalı (taze token alınır). Sunucu konsolunda `unauthorized` hatası görülmemeli.
 12. **Ses/görüntü kanalları etkilenmemeli:** Bir AUDIO kanalına girin → LiveKit odası eskisi gibi açılmalı (bu paket LiveKit'e dokunmuyor).
+13. **WebSocket açık kalıyor (F-32):** Giriş yapmış olarak bir kanal açın → Ağ sekmesinde önce `/api/socket/io` (200), ardından `/api/socket/ws?...transport=websocket` isteği **101** ile açılmalı ve en az 2 dakika açık kalmalı (Mesajlar'da ~25 sn'de bir `2`/`3` ping-pong). Sunucu konsolunda `ping timeout` ya da `transport error` ile kopma görülmemeli. Bunu hem `npm run dev` hem `npm run build && npm start` ile deneyin; iki pencerede 3. adımı birkaç kez tekrarlayın, her seferinde mesaj yenilemeden gelmeli.

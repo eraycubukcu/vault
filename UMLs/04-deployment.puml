@@ -23,7 +23,7 @@ cloud "UploadThing (CDN)" as UT
 database "MongoDB\n(DATABASE_URL)" as Mongo
 
 Browser -- AppNode : HTTPS
-Browser -- AppNode : WebSocket\n/api/socket/io
+Browser -- AppNode : WebSocket\n/api/socket/ws
 Browser -- Clerk : HTTPS (oturum, SDK)
 Browser -- LiveKit : WSS + WebRTC\n(NEXT_PUBLIC_LIVEKIT_URL)
 Browser -- UT : HTTPS (dosya yükleme/indirme)

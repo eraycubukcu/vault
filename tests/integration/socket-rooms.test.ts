@@ -31,6 +31,7 @@ const db = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ db }));
 
 import { createSocketServer, emitToChat, leaveServerRooms } from "@/lib/socket/server";
+import { SOCKET_PATH } from "@/lib/socket/path";
 import { DELETE as deleteMember } from "@/app/api/members/[memberId]/route";
 import { PATCH as leaveServer } from "@/app/api/servers/[serverId]/leave/route";
 
@@ -70,7 +71,7 @@ type Received = { event: string; payload: any }[];
 
 function connectAs(profile: { userID: string } | null): Promise<{ client: ClientSocket; received: Received }> {
     const client = ioClient(url, {
-        path: "/api/socket/io",
+        path: SOCKET_PATH,
         addTrailingSlash: false,
         transports: ["websocket"],
         reconnection: false,
@@ -105,7 +106,7 @@ describe("socket kimlik doğrulama", () => {
     });
 
     it("geçersiz token reddedilir", async () => {
-        const client = ioClient(url, { path: "/api/socket/io", transports: ["websocket"], reconnection: false, auth: { token: "sahte" } });
+        const client = ioClient(url, { path: SOCKET_PATH, transports: ["websocket"], reconnection: false, auth: { token: "sahte" } });
         clients.push(client);
         await expect(new Promise((_, reject) => client.on("connect_error", reject))).rejects.toThrow("unauthorized");
     });

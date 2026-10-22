@@ -31,7 +31,7 @@ package "Next.js Sunucusu" as NextSrv {
   }
 
   package "Pages Router API (pages/api/socket)" {
-    component "/api/socket/io\n(Socket.IO sunucusu)" as IO
+    component "/api/socket/ws\n(Socket.IO sunucusu;\n/api/socket/io başlatır)" as IO
     component "/api/socket/messages\n/api/socket/messages/[id]" as SockMsg
     component "/api/socket/direct-messages\n/api/socket/direct-messages/[id]" as SockDM
   }
@@ -72,7 +72,7 @@ Chat --> SockDM : axios POST/PATCH/DELETE
 ModalProv --> ServersAPI : axios
 ModalProv --> ChannelsAPI : axios
 ModalProv --> MembersAPI : axios
-SocketProv <--> IO : WebSocket\npath=/api/socket/io
+SocketProv <--> IO : WebSocket\npath=/api/socket/ws
 Media --> LKApi : token iste
 Media <--> LiveKitSvc : WebRTC
 Upload --> UTApi

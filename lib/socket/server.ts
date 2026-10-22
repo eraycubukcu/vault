@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "http";
 import { Server, type Socket } from "socket.io";
 import { canAccessChat } from "@/lib/auth/access";
 import { authenticateSocket } from "@/lib/socket/auth";
+import { SOCKET_PATH } from "@/lib/socket/path";
 
 // Tek örnek (tek container) varsayımı: io örneği globalThis üzerinden hem
 // Pages API hem App Router route'larına açılır. Çoklu örnekte Redis adapter gerekir.
@@ -9,8 +10,6 @@ declare global {
     // eslint-disable-next-line no-var
     var __vaultIO: Server | undefined;
 }
-
-export const SOCKET_PATH = "/api/socket/io";
 
 const chatRoom = (chatId: string) => `chat:${chatId}`;
 const profileRoom = (profileId: string) => `profile:${profileId}`;

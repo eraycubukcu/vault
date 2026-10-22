@@ -9,6 +9,7 @@ import {
 } from "react"
 import { useAuth } from "@clerk/nextjs";
 import { io as ClientIO } from "socket.io-client";
+import { SOCKET_INIT_URL, SOCKET_PATH } from "@/lib/socket/path";
 
 type SocketContextType = {
     socket: any | null;
@@ -57,9 +58,22 @@ const SocketConnection = ({setSocket,setIsConnected}:{
         if(!isSignedIn){
             return;
         }
+        let cancelled=false
+        // Socket.IO sunucusu ilk istekte SOCKET_INIT_URL route'unda başlatılır; socket ise
+        // route'u olmayan SOCKET_PATH'e bağlanır (bkz. lib/socket/path.ts). Başlatma isteği
+        // başarısız olsa da bağlanmayı dener: sunucu zaten ayakta olabilir.
+        const initServer=()=>fetch(SOCKET_INIT_URL).catch(()=>{})
+        const start=()=>{
+            initServer().then(()=>{
+                if(!cancelled){
+                    socketInstance.connect()
+                }
+            })
+        }
         const socketInstance=new (ClientIO as any)(process.env.NEXT_PUBLIC_SITE_URL!,{
-            path:"/api/socket/io",
+            path:SOCKET_PATH,
             addTrailingSlash:false,
+            autoConnect:false,
             // Her (yeniden) bağlanmada taze Clerk token'ı alınır.
             auth:(cb:(data:{token:string|null})=>void)=>{
                 getTokenRef.current().then((token)=>cb({token}),()=>cb({token:null}))
@@ -77,12 +91,17 @@ const SocketConnection = ({setSocket,setIsConnected}:{
         let retry:ReturnType<typeof setTimeout>|undefined
         socketInstance.on("connect_error",()=>{
             if(!socketInstance.active){
-                retry=setTimeout(()=>socketInstance.connect(),5000)
+                retry=setTimeout(start,5000)
             }
         })
+        // Sunucu yeniden başlarsa Socket.IO yeniden kurulana kadar SOCKET_PATH'e gelen istekler
+        // Next'e düşer; her otomatik yeniden bağlanma denemesinde sunucuyu başlatmayı tetikle.
+        socketInstance.io.on("reconnect_attempt",initServer)
 
         setSocket(socketInstance)
+        start()
         return ()=>{
+            cancelled=true
             clearTimeout(retry)
             socketInstance.disconnect()
             setSocket(null)

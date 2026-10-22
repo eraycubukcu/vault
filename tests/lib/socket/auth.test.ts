@@ -9,7 +9,7 @@ vi.mock("@clerk/nextjs/server", () => ({ verifyToken }));
 const db = vi.hoisted(() => ({ profile: { findUnique: vi.fn() } }));
 vi.mock("@/lib/db", () => ({ db }));
 
-import { authenticateSocket } from "@/lib/socket/auth";
+import { authenticateSocket, profileIdFromToken } from "@/lib/socket/auth";
 
 const fakeSocket = (auth: Record<string, unknown>) => ({ handshake: { auth }, data: {} as Record<string, unknown> }) as any;
 
@@ -68,5 +68,29 @@ describe("authenticateSocket", () => {
         await authenticateSocket(socket, next);
         expectUnauthorized(next, socket);
         expect(verifyToken).not.toHaveBeenCalled();
+    });
+});
+
+// F-25: auth:refresh aynı doğrulamayı kullanır.
+describe("profileIdFromToken", () => {
+    it("geçerli token için profil id'sini döndürür", async () => {
+        verifyToken.mockResolvedValue({ sub: viewerProfile.userID });
+        expect(await profileIdFromToken("gecerli")).toBe(viewerProfile.id);
+    });
+
+    it("token yoksa ya da string değilse doğrulamadan null döner", async () => {
+        expect(await profileIdFromToken(null)).toBeNull();
+        expect(await profileIdFromToken({ sub: viewerProfile.userID })).toBeNull();
+        expect(verifyToken).not.toHaveBeenCalled();
+    });
+
+    it("geçersiz token için null döner", async () => {
+        verifyToken.mockRejectedValue(new Error("expired"));
+        expect(await profileIdFromToken("eski")).toBeNull();
+    });
+
+    it("profili olmayan kullanıcı için null döner", async () => {
+        verifyToken.mockResolvedValue({ sub: "user_yok" });
+        expect(await profileIdFromToken("gecerli")).toBeNull();
     });
 });

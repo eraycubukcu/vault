@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { canAccessChat } = vi.hoisted(() => ({ canAccessChat: vi.fn() }));
 vi.mock("@/lib/auth/access", () => ({ canAccessChat }));
 
-import { emitToChat, getIO, leaveServerRooms, registerSocketHandlers } from "@/lib/socket/server";
+const { profileIdFromToken } = vi.hoisted(() => ({ profileIdFromToken: vi.fn() }));
+vi.mock("@/lib/socket/auth", () => ({ authenticateSocket: vi.fn(), profileIdFromToken }));
+
+import { closeChatRooms, emitToChat, getIO, leaveServerRooms, registerSocketHandlers } from "@/lib/socket/server";
+import { REAUTH_TIMEOUT_MS } from "@/lib/socket/path";
 
 function fakeIO() {
     const roomEmit = vi.fn();
@@ -25,6 +29,7 @@ function fakeSocket(profileId = "p1") {
         data: { profileId },
         join: vi.fn(),
         leave: vi.fn(),
+        disconnect: vi.fn(),
         on: vi.fn((event: string, handler: (...args: any[]) => any) => { handlers[event] = handler; }),
     };
     return { socket, handlers };
@@ -138,7 +143,80 @@ describe("registerSocketHandlers", () => {
     });
 });
 
-describe("emitToChat / leaveServerRooms", () => {
+// F-25: kimlik yalnızca handshake'te doğrulanırsa oturumu kapatılmış cihaz dinlemeye devam eder.
+// İstemci periyodik olarak taze token gönderir; aynı profile ait geçerli token belirli süre
+// gelmezse ya da token başka bir profile aitse sunucu socket'i koparır.
+describe("auth:refresh ve yeniden doğrulama süresi", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("geçerli token yenilenmezse süre dolunca socket'i koparır", async () => {
+        const { socket } = connect("p1");
+        await vi.advanceTimersByTimeAsync(REAUTH_TIMEOUT_MS - 1);
+        expect(socket.disconnect).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(socket.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it("aynı profile ait geçerli token süreyi uzatır ve ok:true döner", async () => {
+        profileIdFromToken.mockResolvedValue("p1");
+        const { socket, handlers } = connect("p1");
+        await vi.advanceTimersByTimeAsync(REAUTH_TIMEOUT_MS - 1000);
+        const ack = vi.fn();
+        await handlers["auth:refresh"]("taze", ack);
+        expect(profileIdFromToken).toHaveBeenCalledWith("taze");
+        expect(ack).toHaveBeenCalledWith({ ok: true });
+        await vi.advanceTimersByTimeAsync(REAUTH_TIMEOUT_MS - 1);
+        expect(socket.disconnect).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(socket.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it("geçersiz token (ör. oturum kapatılmış) süreyi uzatmaz ve ok:false döner", async () => {
+        profileIdFromToken.mockResolvedValue(null);
+        const { socket, handlers } = connect("p1");
+        await vi.advanceTimersByTimeAsync(REAUTH_TIMEOUT_MS - 1000);
+        const ack = vi.fn();
+        await handlers["auth:refresh"](null, ack);
+        expect(ack).toHaveBeenCalledWith({ ok: false });
+        expect(socket.disconnect).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(socket.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it("başka bir profile ait token gelirse socket'i hemen koparır", async () => {
+        profileIdFromToken.mockResolvedValue("p2");
+        const { socket, handlers } = connect("p1");
+        const ack = vi.fn();
+        await handlers["auth:refresh"]("baska-hesap", ack);
+        expect(socket.disconnect).toHaveBeenCalledWith(true);
+        expect(ack).toHaveBeenCalledWith({ ok: false });
+    });
+
+    it("doğrulama hata verirse süreyi uzatmaz, socket'i hemen koparmaz", async () => {
+        profileIdFromToken.mockRejectedValue(new Error("jwks down"));
+        vi.spyOn(console, "log").mockImplementation(() => {});
+        const { socket, handlers } = connect("p1");
+        const ack = vi.fn();
+        await handlers["auth:refresh"]("t", ack);
+        expect(ack).toHaveBeenCalledWith({ ok: false });
+        expect(socket.disconnect).not.toHaveBeenCalled();
+    });
+
+    it("bağlantı kapanınca zamanlayıcı temizlenir", async () => {
+        const { socket, handlers } = connect("p1");
+        handlers["disconnect"]("client namespace disconnect");
+        await vi.advanceTimersByTimeAsync(REAUTH_TIMEOUT_MS * 2);
+        expect(socket.disconnect).not.toHaveBeenCalled();
+    });
+});
+
+describe("emitToChat / leaveServerRooms / closeChatRooms", () => {
     it("emitToChat yalnızca sohbet odasına yayınlar, io.emit kullanmaz", () => {
         const { io, roomEmit } = fakeIO();
         globalThis.__vaultIO = io;
@@ -166,6 +244,23 @@ describe("emitToChat / leaveServerRooms", () => {
         const { io, socketsLeave } = fakeIO();
         globalThis.__vaultIO = io;
         leaveServerRooms("p2", []);
+        expect(socketsLeave).not.toHaveBeenCalled();
+    });
+
+    // F-29: silinen kanal/sunucunun odalarında kimse kalmamalı.
+    it("closeChatRooms verilen odalardaki tüm socket'leri o odalardan çıkarır", () => {
+        const { io, socketsLeave } = fakeIO();
+        globalThis.__vaultIO = io;
+        closeChatRooms(["c1", "conv-1"]);
+        expect(io.in).toHaveBeenCalledWith(["chat:c1", "chat:conv-1"]);
+        expect(socketsLeave).toHaveBeenCalledWith(["chat:c1", "chat:conv-1"]);
+    });
+
+    it("closeChatRooms boş listeyle hiçbir şey yapmaz", () => {
+        const { io, socketsLeave } = fakeIO();
+        globalThis.__vaultIO = io;
+        closeChatRooms([]);
+        expect(io.in).not.toHaveBeenCalled();
         expect(socketsLeave).not.toHaveBeenCalled();
     });
 });

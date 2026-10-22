@@ -45,11 +45,11 @@ Doğrulama durumu:
 | F-22 | 🟡 | `useChatQuery` 403 yanıtını JSON olarak okumaya çalışıyor |
 | F-23 | 🔵 | ~~`canAccessChat` sohbet kimliği için önce boşuna kanal sorgusu yapıyor~~ (Görev 4'te kapandı) |
 | F-24 | 🔵 | Başka bir sohbete ait cursor sayfadan mesaj düşürebiliyor |
-| F-25 | 🟡 | Socket kimliği yalnızca bağlanırken doğrulanıyor; hesap değişince socket eski profilde kalıyor |
+| F-25 | 🟡 | ~~Socket kimliği yalnızca bağlanırken doğrulanıyor; hesap değişince socket eski profilde kalıyor~~ (Görev 5'te kapandı) |
 | F-26 | 🔵 | Socket token doğrulamasında `authorizedParties` (azp) kontrolü yok |
-| F-27 | 🔵 | Üye atma/ayrılma, yetki kontrolünden önce ek okuma sorguları çalıştırıyor |
+| F-27 | 🔵 | Üye atma/ayrılma, yetki kontrolünden önce ek okuma sorguları çalıştırıyor (atma kısmı Görev 5'te kapandı) |
 | F-28 | 🟡 | `chat:join` için hız sınırı yok |
-| F-29 | 🔵 | Kanal ya da sunucu silinince socket'ler odalarda kalıyor |
+| F-29 | 🔵 | ~~Kanal ya da sunucu silinince socket'ler odalarda kalıyor~~ (Görev 5'te kapandı) |
 | F-30 | 🔵 | Mesaj handler'ları oda adını veritabanı satırından değil query'den alıyor |
 | F-31 | 🔵 | ~~`/home` sayfası `async` tanımlı bir Client Component~~ (Paket 4 sonrası düzeltildi) |
 | F-32 | 🔴 | ~~Next, socket'in WebSocket upgrade'ini kapatıyor; `chat:join` sunucuya ulaşmıyor, canlı mesajlar gelmiyor~~ (Paket 4 sonrası düzeltildi) |
@@ -274,6 +274,12 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
 - **Etki:** Oturumu kapatılmış bir cihaz, socket kopana kadar yetkili olduğu sohbetleri dinlemeye devam eder. Hesap değiştirince canlı mesajlar gelmez.
 - **Durum:** Kodda doğrulandı (çoklu oturum kısmı çalıştırılarak doğrulanacak).
 - **Ele alınacağı görev:** Görev 5. Effect `userId`/`sessionId`'ye bağlanmalı. Sunucu tarafında belirli aralıklarla ya da `chat:join` sırasında token süresi kontrol edilip socket koparılabilir.
+- **Kapandı (Görev 5):**
+  - İstemcideki socket effect'i `userId` ve `sessionId`'ye bağlandı; hesap ya da oturum değişince socket yeniden kuruluyor.
+  - İstemci 30 saniyede bir taze token'ı `auth:refresh` ile gönderiyor (`AUTH_REFRESH_INTERVAL_MS`).
+  - Sunucu, aynı profile ait geçerli bir token 120 saniye içinde gelmezse socket'i koparıyor (`REAUTH_TIMEOUT_MS`). Başka bir profile ait token gelirse socket'i hemen koparıyor.
+  - Sunucu bağlantıyı kendisi koparınca (`io server disconnect`) istemci 5 saniye sonra taze token ile yeniden deniyor.
+  - Oturumu iptal edilmiş bir cihaz en geç ~2 dakika daha dinleyebilir. Testler: `tests/lib/socket/server.test.ts`, `tests/components/socket-provider.test.tsx`, `tests/integration/socket-rooms.test.ts` (`auth:refresh`).
 
 ### F-26: Socket token doğrulamasında `authorizedParties` (azp) kontrolü yok
 - **Yer:** `lib/socket/auth.ts` (`verifyToken` çağrısı)
@@ -288,6 +294,7 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
 - **Etki:** Gereksiz veritabanı yükü.
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 12 (hız sınırı) ya da Görev 5 (aynı route'lar). Ön okuma `server: { profileId: profile.id }` koşuluyla sınırlandırılmalı.
+- **Kısmen kapandı (Görev 5):** Atma isteğinin ön okuması `server: { profileId: profile.id }` ile sahibe sınırlandı; sahibi olmayanın isteği `getMemberChatIds` çalıştırmıyor. Ayrılma isteği yalnızca isteği yapanın kendi üyeliğini okuduğu için bırakıldı. Sunucu sahibinin kendi sunucusundan ayrılma denemesi hâlâ iki `findMany` çalıştırıyor; bu Görev 12'deki hız sınırıyla birlikte ele alınabilir.
 
 ### F-28: `chat:join` için hız sınırı yok
 - **Yer:** `lib/socket/server.ts` (`chat:join`)
@@ -302,6 +309,10 @@ Aşağıdaki maddeler Görev 4'ün (F-02) uygulanması ve bağımsız incelemesi
 - **Etki:** Bellekte gereksiz oda üyelikleri.
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 5 (kanal silmede `socketsLeave` zaten planlı); sunucu silme de aynı göreve eklenmeli.
+- **Kapandı (Görev 5):**
+  - Kanal silme başarılı olunca `closeChatRooms([channelId])` odadaki tüm socket'leri çıkarıyor.
+  - Sunucu silmeden önce `getOwnedServerChatIds` (yalnızca sahip için) kanal ID'lerini ve üyelerin özel sohbet ID'lerini okuyor; silme başarılı olunca bu odalar boşaltılıyor.
+  - Test: `tests/integration/socket-rooms.test.ts` ("kanal ve sunucu silinince odaların boşaltılması").
 
 ### F-30: Mesaj handler'ları oda adını veritabanı satırından değil query'den alıyor
 - **Yer:** `pages/api/socket/messages/index.ts`, `messages/[messageId].ts`, `direct-messages/index.ts`, `direct-messages/[directMessageId].ts`

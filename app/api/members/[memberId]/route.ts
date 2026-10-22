@@ -81,8 +81,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ membe
             return new NextResponse("Member ID missing", { status: 400 })
         }
         // Atılan kişinin socket'lerini odalardan çıkarmak için gereken bilgiyi silmeden önce oku.
+        // Yalnızca sunucu sahibi için okunur; başarısız olacak istek ek sorgu çalıştırmaz (F-27).
         const kicked = await db.member.findFirst({
-            where: { id: memberId, serverId }
+            where: { id: memberId, serverId, server: { profileId: profile.id } }
         })
         const kickedChatIds = kicked && kicked.profileId !== profile.id ? await getMemberChatIds(kicked) : []
         const server = await db.server.update({

@@ -1,8 +1,8 @@
 import type { Server as HttpServer } from "http";
 import { Server, type Socket } from "socket.io";
 import { canAccessChat } from "@/lib/auth/access";
-import { authenticateSocket } from "@/lib/socket/auth";
-import { SOCKET_PATH } from "@/lib/socket/path";
+import { authenticateSocket, profileIdFromToken } from "@/lib/socket/auth";
+import { REAUTH_TIMEOUT_MS, SOCKET_PATH } from "@/lib/socket/path";
 
 // Tek örnek (tek container) varsayımı: io örneği globalThis üzerinden hem
 // Pages API hem App Router route'larına açılır. Çoklu örnekte Redis adapter gerekir.
@@ -22,6 +22,35 @@ export function registerSocketHandlers(io: Server): void {
     io.on("connection", (socket: Socket) => {
         const profileId: string = socket.data.profileId;
         socket.join(profileRoom(profileId));
+
+        // F-25: aynı profile ait geçerli bir token REAUTH_TIMEOUT_MS içinde gelmezse (oturum
+        // kapatılmış, profil silinmiş, istemci susmuş) socket koparılır.
+        let reauthTimer: ReturnType<typeof setTimeout> | undefined;
+        const armReauth = () => {
+            clearTimeout(reauthTimer);
+            reauthTimer = setTimeout(() => socket.disconnect(true), REAUTH_TIMEOUT_MS);
+        };
+        armReauth();
+        socket.on("disconnect", () => clearTimeout(reauthTimer));
+
+        socket.on("auth:refresh", async (token: unknown, ack?: (r: { ok: boolean }) => void) => {
+            const reply = typeof ack === "function" ? ack : () => {};
+            try {
+                const refreshed = await profileIdFromToken(token);
+                if (refreshed === profileId) {
+                    armReauth();
+                    return reply({ ok: true });
+                }
+                // Başka bir hesabın token'ı: bu socket eski profilin odalarında kalmamalı.
+                if (refreshed) {
+                    socket.disconnect(true);
+                }
+                reply({ ok: false });
+            } catch (error) {
+                console.log("[SOCKET_AUTH_REFRESH]", error);
+                reply({ ok: false });
+            }
+        });
 
         // Bu socket'in şu an açık tutmak istediği sohbetler. Kontrol sürerken gelen
         // chat:leave, geç tamamlanan join'in odaya sokmasını engeller.
@@ -83,4 +112,13 @@ export function leaveServerRooms(profileId: string, chatIds: string[]): void {
         return;
     }
     getIO()?.in(profileRoom(profileId)).socketsLeave(chatIds.map(chatRoom));
+}
+
+// Silinen sohbetlerin odalarındaki tüm socket'leri o odalardan çıkarır (F-29).
+export function closeChatRooms(chatIds: string[]): void {
+    if (chatIds.length === 0) {
+        return;
+    }
+    const rooms = chatIds.map(chatRoom);
+    getIO()?.in(rooms).socketsLeave(rooms);
 }

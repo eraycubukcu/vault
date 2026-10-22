@@ -56,6 +56,25 @@ export async function canAccessChat(profileId: string, chatId: string): Promise<
 
 // Üyelik bittiğinde socket'i çıkarılacak sohbetler: sunucunun tüm kanalları ve
 // bu üyeliğin taraf olduğu özel sohbetler. Silme cascade ile bunları sildiği için silmeden ÖNCE çağrılmalı.
+// Sunucu silinmeden önce: sahibiyse sunucunun kanal ID'leri ve üyelerinin taraf olduğu özel
+// sohbet ID'leri (Member silinince Conversation da silinir). Sahibi değilse boş liste; böylece
+// başarısız olacak bir silme isteği sohbet listesini okutamaz.
+export async function getOwnedServerChatIds(profileId: string, serverId: string): Promise<string[]> {
+    const server = await db.server.findFirst({
+        where: { id: serverId, profileId },
+        select: { channels: { select: { id: true } }, members: { select: { id: true } } },
+    });
+    if (!server) {
+        return [];
+    }
+    const memberIds = server.members.map(({ id }) => id);
+    const conversations = await db.conversation.findMany({
+        where: { OR: [{ memberOneId: { in: memberIds } }, { memberTwoId: { in: memberIds } }] },
+        select: { id: true },
+    });
+    return [...server.channels, ...conversations].map(({ id }) => id);
+}
+
 export async function getMemberChatIds(member: { id: string; serverId: string }): Promise<string[]> {
     const [channels, conversations] = await Promise.all([
         db.channel.findMany({ where: { serverId: member.serverId }, select: { id: true } }),

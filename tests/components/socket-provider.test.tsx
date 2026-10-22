@@ -2,11 +2,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, waitFor } from "@testing-library/react";
 
-const auth = vi.hoisted(() => ({ isSignedIn: true as boolean | undefined, getToken: vi.fn() }));
+const auth = vi.hoisted(() => ({
+    isSignedIn: true as boolean | undefined,
+    userId: "user_a" as string | null,
+    sessionId: "sess_a" as string | null,
+    getToken: vi.fn(),
+}));
 vi.mock("@clerk/nextjs", () => ({ useAuth: () => auth }));
 
 const { ioMock, fake } = vi.hoisted(() => {
-    const fake = { on: vi.fn(), disconnect: vi.fn(), connect: vi.fn(), active: false, io: { on: vi.fn() } };
+    const fake = { on: vi.fn(), emit: vi.fn(), disconnect: vi.fn(), connect: vi.fn(), active: false, connected: false, io: { on: vi.fn() } };
     return { fake, ioMock: vi.fn(function () { return fake; }) };
 });
 vi.mock("socket.io-client", () => ({ io: ioMock }));
@@ -15,10 +20,14 @@ const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
 import { SocketProvider } from "@/components/ui/providers/socket-provider";
+import { AUTH_REFRESH_INTERVAL_MS } from "@/lib/socket/path";
 
 beforeEach(() => {
     vi.clearAllMocks();
     auth.isSignedIn = true;
+    auth.userId = "user_a";
+    auth.sessionId = "sess_a";
+    fake.connected = false;
     fetchMock.mockResolvedValue(new Response(null));
 });
 
@@ -118,5 +127,100 @@ describe("SocketProvider", () => {
         const { unmount } = render(<SocketProvider><div /></SocketProvider>);
         unmount();
         expect(fake.disconnect).toHaveBeenCalled();
+    });
+
+    // F-25: Clerk çoklu oturumda hesap değişince isSignedIn true kalır; socket eski profilde kalmamalı.
+    it("hesap (userId) değişince eski socket'i kapatıp yenisini açar", () => {
+        const { rerender } = render(<SocketProvider><div /></SocketProvider>);
+        expect(ioMock).toHaveBeenCalledTimes(1);
+        auth.userId = "user_b";
+        auth.sessionId = "sess_b";
+        rerender(<SocketProvider><div /></SocketProvider>);
+        expect(fake.disconnect).toHaveBeenCalledTimes(1);
+        expect(ioMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("aynı hesapta oturum (sessionId) değişince de socket'i yeniler", () => {
+        const { rerender } = render(<SocketProvider><div /></SocketProvider>);
+        auth.sessionId = "sess_a2";
+        rerender(<SocketProvider><div /></SocketProvider>);
+        expect(fake.disconnect).toHaveBeenCalledTimes(1);
+        expect(ioMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("bağlıyken düzenli aralıklarla taze token'ı auth:refresh ile gönderir", async () => {
+        vi.useFakeTimers();
+        try {
+            auth.getToken.mockResolvedValue("taze");
+            render(<SocketProvider><div /></SocketProvider>);
+            fake.connected = true;
+            await vi.advanceTimersByTimeAsync(AUTH_REFRESH_INTERVAL_MS);
+            expect(fake.emit).toHaveBeenCalledWith("auth:refresh", "taze");
+            fake.emit.mockClear();
+            await vi.advanceTimersByTimeAsync(AUTH_REFRESH_INTERVAL_MS);
+            expect(fake.emit).toHaveBeenCalledWith("auth:refresh", "taze");
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("bağlı değilken auth:refresh göndermez; unmount sonrası zamanlayıcı durur", async () => {
+        vi.useFakeTimers();
+        try {
+            auth.getToken.mockResolvedValue("taze");
+            const { unmount } = render(<SocketProvider><div /></SocketProvider>);
+            await vi.advanceTimersByTimeAsync(AUTH_REFRESH_INTERVAL_MS);
+            expect(fake.emit).not.toHaveBeenCalled();
+            fake.connected = true;
+            unmount();
+            await vi.advanceTimersByTimeAsync(AUTH_REFRESH_INTERVAL_MS * 2);
+            expect(fake.emit).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("token alınamazsa null gönderir (sunucu süreyi uzatmaz)", async () => {
+        vi.useFakeTimers();
+        try {
+            auth.getToken.mockRejectedValue(new Error("signed out"));
+            render(<SocketProvider><div /></SocketProvider>);
+            fake.connected = true;
+            await vi.advanceTimersByTimeAsync(AUTH_REFRESH_INTERVAL_MS);
+            expect(fake.emit).toHaveBeenCalledWith("auth:refresh", null);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    // Sunucu yeniden doğrulama süresi dolunca socket'i koparır; socket.io bu durumda kendiliğinden
+    // yeniden bağlanmaz. İstemci taze token ile yeniden denemeli.
+    it("sunucu bağlantıyı koparınca (io server disconnect) bir süre sonra yeniden bağlanır", async () => {
+        vi.useFakeTimers();
+        try {
+            fetchMock.mockReturnValueOnce(new Promise(() => {}));
+            render(<SocketProvider><div /></SocketProvider>);
+            const onDisconnect = fake.on.mock.calls.find(([event]) => event === "disconnect")![1];
+            onDisconnect("io server disconnect");
+            expect(fake.connect).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(5000);
+            expect(fake.connect).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("istemci tarafı kopmalarda kendi yeniden denemesini başlatmaz (socket.io zaten dener)", async () => {
+        vi.useFakeTimers();
+        try {
+            fetchMock.mockReturnValueOnce(new Promise(() => {}));
+            render(<SocketProvider><div /></SocketProvider>);
+            const onDisconnect = fake.on.mock.calls.find(([event]) => event === "disconnect")![1];
+            onDisconnect("transport close");
+            await vi.advanceTimersByTimeAsync(5000);
+            expect(fake.connect).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

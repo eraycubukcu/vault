@@ -1,7 +1,7 @@
 // Erişim sorgularının `where` koşullarını gerçekten değerlendiren bellek içi sahte DB.
 // Böylece testler yalnızca mock'un ne döndürdüğünü değil, yetki koşulunun kendisini doğrular.
 import { vi } from "vitest";
-import { channel, conversation, otherMember, viewerMember } from "./fixtures";
+import { channel, conversation, otherMember, server, viewerMember } from "./fixtures";
 
 const createdAt = new Date("2026-01-01T00:00:00Z");
 
@@ -30,8 +30,18 @@ export const accessData = {
     conversations: [{ id: conversation.id, memberOneId: conversation.memberOneId, memberTwoId: conversation.memberTwoId }],
 };
 
+// Sunucu sahipleri: `member.findFirst({ where: { server: { profileId } } })` ilişki filtresi için.
+const serverOwners: Record<string, string> = { [server.id]: server.profileId, [foreignChannel.serverId]: outsiderProfileId };
+
 const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
-    Object.entries(where).every(([key, value]) => row[key] === value);
+    Object.entries(where).every(([key, value]) => {
+        if (key === "server") {
+            const { profileId, ...rest } = value as { profileId?: string };
+            if (Object.keys(rest).length) throw new Error(`sahte DB bu server alanlarını desteklemiyor: ${Object.keys(rest)}`);
+            return profileId === undefined || serverOwners[row.serverId as string] === profileId;
+        }
+        return row[key] === value;
+    });
 
 const memberById = (id: string) => accessData.members.find((m) => m.id === id)!;
 

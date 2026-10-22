@@ -26,7 +26,7 @@ const db = vi.hoisted(() => ({
     channel: { findUnique: vi.fn(), findMany: vi.fn() },
     member: { findFirst: vi.fn() },
     conversation: { findFirst: vi.fn(), findMany: vi.fn() },
-    server: { update: vi.fn() },
+    server: { update: vi.fn(), findFirst: vi.fn(), delete: vi.fn() },
 }));
 vi.mock("@/lib/db", () => ({ db }));
 
@@ -34,6 +34,8 @@ import { createSocketServer, emitToChat, leaveServerRooms } from "@/lib/socket/s
 import { SOCKET_PATH } from "@/lib/socket/path";
 import { DELETE as deleteMember } from "@/app/api/members/[memberId]/route";
 import { PATCH as leaveServer } from "@/app/api/servers/[serverId]/leave/route";
+import { DELETE as deleteChannel } from "@/app/api/channels/[channelId]/route";
+import { DELETE as deleteServer } from "@/app/api/servers/[serverId]/route";
 
 let httpServer: HttpServer;
 let url: string;
@@ -256,5 +258,120 @@ describe("üyelik bitince odadan çıkarma", () => {
         expect(events(viewer.received, key)).toHaveLength(1);
         expect(events(viewerTab2.received, key)).toHaveLength(1);
         expect(events(other.received, key)).toHaveLength(1);
+    });
+});
+
+// F-27: atma isteğinin ön okuması sahiplik koşuluna bağlı; sahibi olmayan istek sohbet listesini okutamaz.
+describe("atma ön okuması", () => {
+    it("sahibi olmayanın atma isteği sohbet ID'lerini okumaz", async () => {
+        currentProfile.mockResolvedValue(otherProfile);
+        db.server.update.mockRejectedValue(new Error("Record to update not found."));
+        vi.spyOn(console, "log").mockImplementation(() => {});
+        const res = await deleteMember(
+            new Request(`http://localhost/api/members/${viewerMember.id}?serverId=${server.id}`, { method: "DELETE" }),
+            { params: Promise.resolve({ memberId: viewerMember.id }) },
+        );
+        expect(res.status).toBe(500);
+        expect(db.member.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ server: { profileId: otherProfile.id } }),
+        }));
+        expect(db.channel.findMany).not.toHaveBeenCalled();
+        expect(db.conversation.findMany).not.toHaveBeenCalled();
+    });
+});
+
+// F-29: silinen kanalın / sunucunun odalarında socket kalmamalı.
+describe("kanal ve sunucu silinince odaların boşaltılması", () => {
+    async function bothInRooms() {
+        const viewer = await connectAs(viewerProfile);
+        const other = await connectAs(otherProfile);
+        for (const client of [viewer.client, other.client]) {
+            expect(await join(client, channel.id)).toEqual({ ok: true });
+            expect(await join(client, conversation.id)).toEqual({ ok: true });
+        }
+        return { viewer, other };
+    }
+
+    async function received({ viewer, other }: Awaited<ReturnType<typeof bothInRooms>>) {
+        const key = `chat:${channel.id}:messages`;
+        const dmKey = `chat:${conversation.id}:messages`;
+        emitToChat(channel.id, key, { id: "after-delete" });
+        emitToChat(conversation.id, dmKey, { id: "dm-after-delete" });
+        await barrier(
+            { client: viewer.client, profileId: viewerProfile.id },
+            { client: other.client, profileId: otherProfile.id },
+        );
+        return {
+            channel: [events(viewer.received, key).length, events(other.received, key).length],
+            dm: [events(viewer.received, dmKey).length, events(other.received, dmKey).length],
+        };
+    }
+
+    const channelDelete = () => deleteChannel(
+        new Request(`http://localhost/api/channels/${channel.id}?serverId=${server.id}`, { method: "DELETE" }),
+        { params: Promise.resolve({ channelId: channel.id }) },
+    );
+    const serverDelete = () => deleteServer(
+        new Request(`http://localhost/api/servers/${server.id}`, { method: "DELETE" }),
+        { params: Promise.resolve({ serverId: server.id }) },
+    );
+
+    beforeEach(() => {
+        db.server.update.mockImplementation(projecting(server));
+        db.server.delete.mockImplementation(projecting(server));
+        // Sahiplik koşulunu gerçekten değerlendirir.
+        db.server.findFirst.mockImplementation(async (args: any) =>
+            args.where.id === server.id && args.where.profileId === server.profileId ? projecting(server)(args) : null);
+        db.conversation.findMany.mockImplementation(projecting([conversation]));
+    });
+
+    it("DELETE /api/channels sonrası kanal odasında kimse kalmaz; özel sohbet etkilenmez", async () => {
+        const sockets = await bothInRooms();
+        currentProfile.mockResolvedValue(viewerProfile);
+        expect((await channelDelete()).status).toBe(200);
+        expect(await received(sockets)).toEqual({ channel: [0, 0], dm: [1, 1] });
+    });
+
+    it("kanal silme başarısız olursa oda olduğu gibi kalır", async () => {
+        const sockets = await bothInRooms();
+        currentProfile.mockResolvedValue(otherProfile);
+        db.server.update.mockRejectedValue(new Error("Record to update not found."));
+        vi.spyOn(console, "log").mockImplementation(() => {});
+        expect((await channelDelete()).status).toBe(500);
+        expect(await received(sockets)).toEqual({ channel: [1, 1], dm: [1, 1] });
+    });
+
+    it("DELETE /api/servers sonrası kanal ve üyelerin özel sohbet odaları boşalır", async () => {
+        const sockets = await bothInRooms();
+        currentProfile.mockResolvedValue(viewerProfile);
+        expect((await serverDelete()).status).toBe(200);
+        expect(await received(sockets)).toEqual({ channel: [0, 0], dm: [0, 0] });
+    });
+
+    it("sahibi olmayanın sunucu silme isteği kimseyi çıkarmaz ve sohbet ID'lerini okumaz", async () => {
+        const sockets = await bothInRooms();
+        currentProfile.mockResolvedValue(otherProfile);
+        db.server.delete.mockRejectedValue(new Error("Record to delete does not exist."));
+        vi.spyOn(console, "log").mockImplementation(() => {});
+        expect((await serverDelete()).status).toBe(500);
+        expect(db.conversation.findMany).not.toHaveBeenCalled();
+        expect(await received(sockets)).toEqual({ channel: [1, 1], dm: [1, 1] });
+    });
+});
+
+// F-25: başka bir hesabın token'ı ile yenileme yapılırsa socket hemen koparılır.
+describe("auth:refresh", () => {
+    it("aynı hesabın taze token'ı kabul edilir, bağlantı sürer", async () => {
+        const viewer = await connectAs(viewerProfile);
+        const reply = await new Promise((resolve) => viewer.client.emit("auth:refresh", `tok:${viewerProfile.userID}`, resolve));
+        expect(reply).toEqual({ ok: true });
+        expect(viewer.client.connected).toBe(true);
+    });
+
+    it("başka hesabın token'ı ile yenileme socket'i koparır", async () => {
+        const viewer = await connectAs(viewerProfile);
+        const reason = new Promise((resolve) => viewer.client.on("disconnect", resolve));
+        viewer.client.emit("auth:refresh", `tok:${otherProfile.userID}`);
+        expect(await reason).toBe("io server disconnect");
     });
 });

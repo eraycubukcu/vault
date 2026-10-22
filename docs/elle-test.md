@@ -64,3 +64,47 @@ Tarayıcı konsolunda olayları görmek için: React DevTools olmadan socket'e e
 11. **Uzun oturum (token yenileme):** B'nin sekmesini 2 dakikadan uzun açık bırakın (Clerk token'ı ~60 sn geçerli), sonra 10. adımdaki gibi sunucuyu yeniden başlatın → yeniden bağlanma başarılı olmalı (taze token alınır). Sunucu konsolunda `unauthorized` hatası görülmemeli.
 12. **Ses/görüntü kanalları etkilenmemeli:** Bir AUDIO kanalına girin → LiveKit odası eskisi gibi açılmalı (bu paket LiveKit'e dokunmuyor).
 13. **WebSocket açık kalıyor (F-32):** Giriş yapmış olarak bir kanal açın → Ağ sekmesinde önce `/api/socket/io` (200), ardından `/api/socket/ws?...transport=websocket` isteği **101** ile açılmalı ve en az 2 dakika açık kalmalı (Mesajlar'da ~25 sn'de bir `2`/`3` ping-pong). Sunucu konsolunda `ping timeout` ya da `transport error` ile kopma görülmemeli. Bunu hem `npm run dev` hem `npm run build && npm start` ile deneyin; iki pencerede 3. adımı birkaç kez tekrarlayın, her seferinde mesaj yenilemeden gelmeli.
+
+---
+
+## Paket 5 — Socket yeniden doğrulama ve silinen sohbet odaları (Görev 5'in kalanı: F-25, F-29, F-27'nin atma kısmı)
+
+Bu listedeki her adım **gerçek bir tarayıcıda**, iki modda **ayrı ayrı** denenir:
+
+- **Dev:** `npm run dev` → `http://localhost:3000`
+- **Prod:** `npm run build && npm start` → `http://localhost:3000`. `NEXT_PUBLIC_SITE_URL` build sırasında pakete gömülür; build'den önce `.env` içinde `http://localhost:3000` olmalı. Modlar arasında geçerken sunucuyu durdurup diğer modda yeniden başlatın ve sekmeleri yenileyin.
+
+Her adımın sonundaki `[ ] dev  [ ] prod` kutularını ayrı ayrı işaretleyin. Bir modda geçip diğerinde kalan adım, ayrı bir hata olarak kaydedilmeli.
+
+**Hazırlık:** İki ayrı tarayıcı kullanın (ör. Chrome ve Firefox). Hesaplar:
+- **A:** sunucu **S**'nin sahibi.
+- **B:** S'nin üyesi ve kendi sunucusu **T**'nin sahibi.
+
+Olayları **Ağ → WS → `/api/socket/ws` → Mesajlar** görünümünden izleyin. Giden paketler yeşil (↑), gelenler kırmızı (↓) oktur.
+
+> Odadan çıkarmanın kendisi (silinen kanal/sunucu odasında socket kalmaması) dışarıdan gözlenemez: silinen sohbete mesaj yazılamadığı için olay da üretilemez. Bu kısım `tests/integration/socket-rooms.test.ts` ile gerçek Socket.IO üzerinde doğrulanıyor. Aşağıdaki adımlar silme akışlarının bozulmadığını, fazla oda boşaltılmadığını ve yeniden doğrulamanın tarayıcıda çalıştığını denetler.
+
+### A. Kanal ve sunucu silme (F-29)
+
+1. **Kanal silme akışı bozulmadı:** A, S'de `sil-1` adında bir TEXT kanalı açsın. A ve B bu kanalı açsın; ikisinin WS akışında `chat:join` için `{"ok":true}` görülmeli. A kanal menüsünden kanalı silsin → istek **200** dönmeli ve A `general`'a yönlenmeli. Sunucu konsolunda `[CHANNEL_ID_DELETE]` hatası görülmemeli. `[ ] dev  [ ] prod`
+2. **Diğer odalar etkilenmedi:** 1. adımdan sonra B `general`'a geçsin. A `general`'a mesaj yazsın → B'de **yenilemeden** görünmeli. A ile B'nin özel sohbetinde de mesajlar canlı gelmeye devam etmeli. `[ ] dev  [ ] prod`
+3. **`general` silinemez:** A'nın konsolunda şunu çalıştırın: `fetch('/api/channels/<general kanalId>?serverId=<S id>', { method: 'DELETE' }).then(r => r.status)` → **500** dönmeli (F-11 düzeltilince 404 olacak). B'ye `general`'daki mesajlar gelmeye devam etmeli. `[ ] dev  [ ] prod`
+4. **Sahibi olmayan sunucuyu silemez:** B'nin konsolunda şunu çalıştırın: `fetch('/api/servers/<S id>', { method: 'DELETE' }).then(r => r.status)` → **500** dönmeli. S yerinde kalmalı ve A'nın `general`'a yazdığı mesaj B'ye canlı gelmeli. `[ ] dev  [ ] prod`
+5. **Sunucu silme:** B iki sekme açsın: birinde S'nin `general`'ı, diğerinde kendi sunucusu T'nin bir kanalı. A, S'yi sunucu ayarlarından silsin → istek **200** dönmeli ve sunucu konsolunda `[SERVER_ID_DELETE]` hatası görülmemeli. A, T'ye davet linkiyle önceden katılmış olsun (hazırlıkta yapılabilir). A, T'deki aynı kanala mesaj yazsın → mesaj B'nin T sekmesinde **yenilemeden** görünmeli. B'nin socket'i yalnızca S'nin odalarından çıkarılmış olmalı. `[ ] dev  [ ] prod`
+6. **Sahibi olmayanın atma isteği:** B'nin konsolunda şunu çalıştırın: `fetch('/api/members/<A'nın memberId>?serverId=<S id>', { method: 'DELETE' }).then(r => r.status)` → **500** dönmeli ve A sunucuda kalmalı. (F-27: bu istek artık sohbet listesini okumuyor; bu kısım testte doğrulanıyor.) `[ ] dev  [ ] prod`
+
+### B. Socket kimliğinin yeniden doğrulanması (F-25)
+
+7. **Periyodik yenileme:** B bir kanalı açık tutsun. WS Mesajlar'da yaklaşık **30 saniyede bir** giden `42["auth:refresh","eyJ..."]` paketi görülmeli. Bağlantı en az **5 dakika** açık kalmalı ve gösterge yeşil kalmalı. Bu sürede A'nın yazdığı mesajlar canlı gelmeli. Sunucu konsolunda `[SOCKET_AUTH_REFRESH]` hatası görülmemeli. `[ ] dev  [ ] prod`
+8. **Arka plan sekmesi:** B'nin sekmesini başka bir sekmeye geçerek **en az 6 dakika** arka planda bırakın; tarayıcı bu sürede zamanlayıcıları dakikada bire kısar. Sonra sekmeye dönün → gösterge yeşil olmalı. A'nın yeni mesajı canlı gelmeli. Bağlantı koptuysa WS'de yeni bir bağlantı ve onun üzerinde `chat:join` → `{"ok":true}` görülmeli; mesaj yine canlı gelmeli. `[ ] dev  [ ] prod`
+9. **Başka cihazdan oturum kapatma:** B'nin oturumunu Clerk Dashboard'dan kapatın (**Users → B → Sessions → Revoke**). Bunu B'nin açık sekmesine dokunmadan yapın. **En geç 2,5 dakika** içinde B'nin sekmesinde iki şeyden biri olmalı: (a) gösterge kırmızıya döner ve WS bağlantısı kapanır, ya da (b) Clerk sayfayı oturumsuz duruma geçirir. Bu süreden sonra A'nın `general`'a yazdığı mesaj B'nin sekmesinde **görünmemeli**. Sunucu konsolunda kalıcı bir hata ya da sonsuz hızlı yeniden bağlanma döngüsü olmamalı; en fazla 5 saniyede bir `unauthorized` denemesi kabul edilir. `[ ] dev  [ ] prod`
+10. **Hesap değiştirme (çoklu oturum):** Yalnızca Clerk Dashboard'da **Multi-session** açıksa yapılır; kapalıysa bu adımı "uygulanamaz" olarak işaretleyin. B, UserButton'dan **Add account** ile C hesabını eklesin ve C'ye geçsin → WS'de eski `/api/socket/ws` bağlantısı kapanmalı ve yeni bir bağlantı açılmalı. C'nin açtığı kanalda `chat:join` → `{"ok":true}` dönmeli ve mesajlar canlı gelmeli. B'ye geri geçince aynı şey tersinden olmalı. `[ ] dev  [ ] prod`
+11. **Sunucu yeniden başlatma (Paket 4'teki 10–11. adımların tekrarı):** B kanaldayken sunucuyu durdurup 5 saniye sonra aynı modda yeniden başlatın. Gösterge önce kırmızı sonra yeşil olmalı; yeni bağlantıda `chat:join` ve 30 saniye içinde `auth:refresh` görülmeli. Prod modunda yeniden başlatma `npm start` ile yapılır, build tekrarlanmaz. `[ ] dev  [ ] prod`
+
+| Adım | dev | prod |
+|---|---|---|
+| 1–6 (F-29, F-27) | [ ] | [ ] |
+| 7–8 (yenileme) | [ ] | [ ] |
+| 9 (oturum iptali) | [ ] | [ ] |
+| 10 (hesap değiştirme) | [ ] | [ ] |
+| 11 (yeniden başlatma) | [ ] | [ ] |

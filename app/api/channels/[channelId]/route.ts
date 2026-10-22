@@ -2,6 +2,7 @@ import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { MemberRole } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { closeChatRooms } from "@/lib/socket/server";
 
 export async function DELETE(
     req: Request,
@@ -48,6 +49,8 @@ export async function DELETE(
                 }
             }
         })
+        // Silinen kanalın odasında socket kalmasın (F-29).
+        closeChatRooms([channelId])
         return NextResponse.json(server)
     }
     catch (error) {

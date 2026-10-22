@@ -9,7 +9,7 @@ import {
 } from "react"
 import { useAuth } from "@clerk/nextjs";
 import { io as ClientIO } from "socket.io-client";
-import { SOCKET_INIT_URL, SOCKET_PATH } from "@/lib/socket/path";
+import { AUTH_REFRESH_INTERVAL_MS, SOCKET_INIT_URL, SOCKET_PATH } from "@/lib/socket/path";
 
 type SocketContextType = {
     socket: any | null;
@@ -48,11 +48,13 @@ const SocketConnection = ({setSocket,setIsConnected}:{
     setSocket:(socket:any)=>void;
     setIsConnected:(isConnected:boolean)=>void;
 })=>{
-    const {isSignedIn,getToken}=useAuth()
+    const {isSignedIn,userId,sessionId,getToken}=useAuth()
     // getToken referansı değişse bile bağlantı yeniden kurulmasın diye ref'te tutulur.
     const getTokenRef=useRef(getToken)
     getTokenRef.current=getToken
 
+    // Clerk çoklu oturumda hesap değişince isSignedIn true kalır; socket'in eski profilde
+    // kalmaması için bağlantı userId/sessionId değişince de yeniden kurulur (F-25).
     useEffect(()=>{
         // Sunucu token'sız bağlantıyı reddeder; oturum yoksa bağlanmaya çalışma.
         if(!isSignedIn){
@@ -83,12 +85,16 @@ const SocketConnection = ({setSocket,setIsConnected}:{
         socketInstance.on("connect",()=>{
             setIsConnected(true)
         })
-        socketInstance.on("disconnect",()=>{
-            setIsConnected(false)
-        })
-        // Sunucu bağlantıyı reddederse (ör. token süresi dolmuş) socket.io kendiliğinden
-        // yeniden denemez; kısa bir bekleme sonrası taze token ile tekrar dene.
+        // Sunucu bağlantıyı reddederse (ör. token süresi dolmuş) ya da kendisi koparırsa (yeniden
+        // doğrulama süresi doldu) socket.io kendiliğinden yeniden denemez; kısa bir bekleme sonrası
+        // taze token ile tekrar dene.
         let retry:ReturnType<typeof setTimeout>|undefined
+        socketInstance.on("disconnect",(reason:string)=>{
+            setIsConnected(false)
+            if(reason==="io server disconnect"){
+                retry=setTimeout(start,5000)
+            }
+        })
         socketInstance.on("connect_error",()=>{
             if(!socketInstance.active){
                 retry=setTimeout(start,5000)
@@ -98,16 +104,31 @@ const SocketConnection = ({setSocket,setIsConnected}:{
         // Next'e düşer; her otomatik yeniden bağlanma denemesinde sunucuyu başlatmayı tetikle.
         socketInstance.io.on("reconnect_attempt",initServer)
 
+        // F-25: sunucu kimliği düzenli olarak yeniden doğrular; token alınamazsa (oturum
+        // kapatılmış) null gönderilir ve sunucu süre dolunca socket'i koparır.
+        const refresh=setInterval(()=>{
+            if(!socketInstance.connected){
+                return;
+            }
+            const send=(token:string|null)=>{
+                if(!cancelled){
+                    socketInstance.emit("auth:refresh",token)
+                }
+            }
+            getTokenRef.current().then(send,()=>send(null))
+        },AUTH_REFRESH_INTERVAL_MS)
+
         setSocket(socketInstance)
         start()
         return ()=>{
             cancelled=true
             clearTimeout(retry)
+            clearInterval(refresh)
             socketInstance.disconnect()
             setSocket(null)
             setIsConnected(false)
         }
-    },[isSignedIn,setSocket,setIsConnected])
+    },[isSignedIn,userId,sessionId,setSocket,setIsConnected])
 
     return null
 }

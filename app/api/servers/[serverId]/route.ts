@@ -1,6 +1,8 @@
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { getOwnedServerChatIds } from "@/lib/auth/access";
+import { closeChatRooms } from "@/lib/socket/server";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ serverId: string }> }) {
     try {
@@ -38,12 +40,15 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ serve
         if (!profile) {
             return new NextResponse("Unauthorized", { status: 401 })
         }
+        // Silinecek kanal ve özel sohbet odalarını silmeden önce oku (yalnızca sahip için).
+        const chatIds = await getOwnedServerChatIds(profile.id, serverId)
         const server = await db.server.delete({
             where: {
                 id: serverId,
                 profileId:profile.id
             }
         })
+        closeChatRooms(chatIds)
         return NextResponse.json(server)
     }
     catch (error) {

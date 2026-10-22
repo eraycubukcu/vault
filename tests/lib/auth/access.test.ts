@@ -8,10 +8,11 @@ const db = vi.hoisted(() => ({
     channel: { findUnique: vi.fn(), findMany: vi.fn() },
     member: { findFirst: vi.fn() },
     conversation: { findFirst: vi.fn(), findMany: vi.fn() },
+    server: { findFirst: vi.fn() },
 }));
 vi.mock("@/lib/db", () => ({ db }));
 
-import { canAccessChat, getChannelAccess, getConversationAccess, getMemberChatIds } from "@/lib/auth/access";
+import { canAccessChat, getChannelAccess, getConversationAccess, getMemberChatIds, getOwnedServerChatIds } from "@/lib/auth/access";
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -130,5 +131,42 @@ describe("getMemberChatIds", () => {
     it("başka sunucunun kanallarını ve üyenin taraf olmadığı sohbetleri içermez", async () => {
         const ids = await getMemberChatIds({ id: "m-third", serverId: "s-2" });
         expect(ids.sort()).toEqual(["c-2", "conv-2", "conv-3"]);
+    });
+});
+
+// F-29: sunucu silinince kanal odaları ve üyelerin özel sohbet odaları (Member silinince
+// Conversation da silinir) boşaltılır. Ön okuma yalnızca sahip için yapılır (F-27 dersi).
+describe("getOwnedServerChatIds", () => {
+    const servers = [
+        { id: "s-1", profileId: "p-owner", channels: [{ id: "c-1" }, { id: "c-9" }], members: [{ id: "m-a" }, { id: "m-b" }] },
+    ];
+    const conversations = [
+        { id: "conv-1", memberOneId: "m-a", memberTwoId: "m-b" },
+        { id: "conv-2", memberOneId: "m-x", memberTwoId: "m-a" },
+        { id: "conv-3", memberOneId: "m-x", memberTwoId: "m-y" },
+    ];
+
+    beforeEach(() => {
+        db.server.findFirst.mockImplementation(async ({ where, select }: any) => {
+            const found = servers.find((s) => s.id === where.id && s.profileId === where.profileId);
+            if (!found) return null;
+            expect(select).toEqual({ channels: { select: { id: true } }, members: { select: { id: true } } });
+            return { channels: found.channels, members: found.members };
+        });
+        db.conversation.findMany.mockImplementation(async ({ where }: any) =>
+            conversations
+                .filter((conv) => (where.OR as Record<string, { in: string[] }>[]).some((cond) =>
+                    Object.entries(cond).every(([key, value]) => value.in.includes((conv as any)[key]))))
+                .map(({ id }) => ({ id })));
+    });
+
+    it("sahip için kanalları ve üyelerin taraf olduğu sohbetleri döner", async () => {
+        const ids = await getOwnedServerChatIds("p-owner", "s-1");
+        expect(ids.sort()).toEqual(["c-1", "c-9", "conv-1", "conv-2"]);
+    });
+
+    it("sahip olmayan için boş döner ve sohbet sorgusu çalışmaz", async () => {
+        expect(await getOwnedServerChatIds("p-baska", "s-1")).toEqual([]);
+        expect(db.conversation.findMany).not.toHaveBeenCalled();
     });
 });

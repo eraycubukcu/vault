@@ -1,11 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { AudioTrack, BarVisualizer, CarouselLayout, Chat, ConnectionState, ConnectionStateToast, ControlBar, FocusLayout, FocusLayoutContainer, GridLayout, isTrackReference, LayoutContextProvider, LiveKitRoom, ParticipantAudioTile, ParticipantLoop, ParticipantName, ParticipantPlaceholder, ParticipantTile, RoomAudioRenderer, RoomName, TrackLoop, TrackRefContext, TrackReferenceOrPlaceholder, useCreateLayoutContext, useParticipants, usePinnedTracks, useTracks, VideoConference, VideoConferenceProps, VideoTrack, WidgetState } from "@livekit/components-react"
+import { AudioTrack, BarVisualizer, CarouselLayout, Chat, ConnectionState, ConnectionStateToast, ControlBar, FocusLayout, FocusLayoutContainer, GridLayout, isTrackReference, LayoutContextProvider, LiveKitRoom, ParticipantAudioTile, ParticipantLoop, ParticipantName, ParticipantPlaceholder, ParticipantTile, RoomAudioRenderer, RoomName, TrackLoop, TrackRefContext, TrackReferenceOrPlaceholder, useCreateLayoutContext, useLocalParticipantPermissions, useParticipants, usePinnedTracks, useTracks, VideoConference, VideoConferenceProps, VideoTrack, WidgetState } from "@livekit/components-react"
 import "@livekit/components-styles";
 import { isEqualTrackRef } from '@livekit/components-core';
 import { Channel } from "@prisma/client";
-import { useUser } from "@clerk/nextjs";
 import { Loader2, Video } from "lucide-react";
 import { RoomEvent, Track } from "livekit-client";
 import { Slider } from "./ui/slider";
@@ -17,6 +16,14 @@ interface MediaRoomProps {
     chatId: string;
     video: boolean;
     audio: boolean;
+}
+
+// Token'daki izin kamerayı kapsıyor mu? Boş kaynak listesi LiveKit'te "tüm kaynaklar serbest" demek.
+// Sesli kanal token'ı kamerayı içermez; buton gizlenmezse basınca hata verir.
+export function canPublishCamera(permissions: ReturnType<typeof useLocalParticipantPermissions>): boolean {
+    if (!permissions?.canPublish) return false;
+    const sources = permissions.canPublishSources;
+    return sources.length === 0 || sources.map(Track.sourceFromProto).includes(Track.Source.Camera);
 }
 
 export function isWeb(): boolean {
@@ -51,6 +58,7 @@ export function VideoConference2({
     };
 
     const layoutContext = useCreateLayoutContext();
+    const cameraAllowed = canPublishCamera(useLocalParticipantPermissions());
 
     const screenShareTracks = tracks
         .filter(isTrackReference)
@@ -126,7 +134,7 @@ export function VideoConference2({
                                 </FocusLayoutContainer>
                             </div>
                         )}
-                        <ControlBar variation="minimal" controls={{ chat: true, settings: !!SettingsComponent }} />
+                        <ControlBar variation="minimal" controls={{ chat: true, camera: cameraAllowed, settings: !!SettingsComponent }} />
                     </div>
                     <Chat
                         style={{ display: widgetState.showChat ? 'grid' : 'none' }}
@@ -155,23 +163,32 @@ export const MediaRoom = ({
     chatId, video, audio
 }: MediaRoomProps) => {
     const [position, setPosition] = useState(1);
-    const { user } = useUser()
     const [token, setToken] = useState("")
+    const [error, setError] = useState<"" | "forbidden" | "failed">("")
 
     useEffect(() => {
-        if (!user?.firstName || !user?.lastName) return;
-        const name = `${user.firstName} ${user.lastName}`;
+        // Kimlik ve ad sunucuda profilden alınır; istemci yalnızca hangi odaya gireceğini söyler.
+        let cancelled = false;
+        setToken("");
+        setError("");
         (async () => {
             try {
-                const resp = await fetch(`/api/livekit?room=${chatId}&username=${name}`);
+                const resp = await fetch(`/api/livekit?room=${encodeURIComponent(chatId)}`);
+                if (resp.status === 401 || resp.status === 403) {
+                    if (!cancelled) setError("forbidden");
+                    return;
+                }
+                if (!resp.ok) throw new Error(`livekit token: ${resp.status}`);
                 const data = await resp.json()
-                setToken(data.token)
+                if (!cancelled) setToken(data.token)
             }
             catch (e) {
                 console.log(e);
+                if (!cancelled) setError("failed");
             }
         })()
-    }, [user?.firstName, user?.lastName, chatId]);
+        return () => { cancelled = true; };
+    }, [chatId]);
 
     const moveToggle = () => {
         if (position == 0) {
@@ -180,6 +197,16 @@ export const MediaRoom = ({
         else {
             setPosition(0)
         }
+    }
+
+    if (error) {
+        return (
+            <div className="flex flex-col flex-1 justify-center items-center">
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {error === "forbidden" ? "Bu odaya erişiminiz yok" : "Odaya bağlanılamadı"}
+                </p>
+            </div>
+        )
     }
 
     if (token === "") {

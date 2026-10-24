@@ -35,6 +35,11 @@ Bir adım başarısız olursa adım numarasını, modu (dev/prod), tarayıcı ko
 | 5 | 9 (Clerk Dashboard'dan oturum iptali) | [ ] | [ ] |
 | 5 | 10 (hesap değiştirme; Multi-session kapalıysa "uygulanamaz" yazın) | [ ] | [ ] |
 | 5 | 11 (sunucu yeniden başlatma) | [ ] | [ ] |
+| 6: LiveKit token'ı | 1–2 (aynı ada sahip iki hesap, istek yalnızca `room`) | [ ] | — |
+| 6 | 3–5 (üye olmayana, metin kanalına ve sahte `username`'e karşı token) | [ ] | — |
+| 6 | 6–7 (sesli kanalda kamera yok, görüntülü kanal ve özel sohbette var) | [ ] | — |
+| 6 | 8 (atılan kullanıcı; bilinen açık F-38) | [ ] | — |
+| 6 | 9–10 (10 dakikadan uzun oturum ve yeniden bağlanma, adı olmayan Clerk hesabı) | [ ] | [ ] |
 
 **Önerilen sıra:**
 1. Paket 4'ün 13. adımı: diğer socket adımları buna bağlı.
@@ -148,3 +153,38 @@ Olayları **Ağ → WS → `/api/socket/ws` → Mesajlar** görünümünden izle
 | 9 (oturum iptali) | [ ] | [ ] |
 | 10 (hesap değiştirme) | [ ] | [ ] |
 | 11 (yeniden başlatma) | [ ] | [ ] |
+
+---
+
+## Paket 6 — LiveKit token'ı (Görev 6: F-03)
+
+**Hazırlık:** `npm run dev`; `.env` içinde `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` ve `NEXT_PUBLIC_LIVEKIT_URL` dolu olmalı. Hesaplar: **A** (sunucu **S**'nin sahibi), **B** (S'nin üyesi), **C** (S'nin üyesi değil). 1. adım için A ile B'nin Clerk'teki ad-soyadı **aynı** olmalı (ör. ikisi de "Test Kullanıcı"). Bu adımdan sonra B'nin adı değiştirilebilir. S'de bir AUDIO (`sesli`) ve bir VIDEO (`goruntulu`) kanalı açın; kimliklerini URL'den alın.
+
+Token içeriğini görmek için tarayıcı konsolunda:
+```js
+const t = (await (await fetch('/api/livekit?room=<id>')).json()).token;
+JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+```
+
+1. **Aynı ad, iki hesap:** A ve B aynı anda `sesli` kanalına girsin → ikisi de odada iki ayrı katılımcı olarak görünmeli ve hiçbiri odadan düşmemeli. (Eskiden ikisi de aynı `identity`'yi alıyordu ve sonradan giren öncekini düşürüyordu.) Not: Aynı hesabın iki sekmesi hâlâ aynı `identity`'yi alır; ikinci sekme ilkini düşürür. Bu beklenen davranış. `[ ] dev`
+2. **İstek yalnızca oda kimliği taşıyor:** Ağ sekmesinde `/api/livekit` isteğinin adresi yalnızca `?room=<id>` olmalı; `username` bulunmamalı. Yanıt başlığında `Cache-Control: no-store` görülmeli. `[ ] dev`
+3. **Üye olmayana token yok:** C'nin konsolunda `fetch('/api/livekit?room=<sesli id>').then(r => r.status)` → **403**. A ile B'nin özel sohbet kimliğiyle de aynı istek → **403**. C, `/servers/<S id>/channels/<sesli id>` adresini açarsa sayfa zaten yönlendirmeli; açılırsa medya alanında "Bu odaya erişiminiz yok" yazmalı. `[ ] dev`
+4. **Metin kanalına token yok:** A'nın konsolunda `general` kanalının kimliğiyle istek → **403**. `[ ] dev`
+5. **Kimlik ve ad sunucudan geliyor:** A'nın konsolunda yukarıdaki kodu `?room=<sesli id>&username=Sahte&name=Sahte` ile çalıştırın. Sonuçta `sub` A'nın profil kimliği, `name` A'nın profil adı olmalı. `video.room` `sesli` kanalının kimliği, `video.canUpdateOwnMetadata` `false` olmalı. `roomAdmin`, `roomCreate` ve `roomRecord` alanları bulunmamalı. `exp`, şimdiki zamandan en fazla 600 saniye ileride olmalı. `[ ] dev`
+6. **Sesli kanal:** A `sesli` kanalına girsin. Kontrol çubuğunda **kamera butonu bulunmamalı**; mikrofon ve ekran paylaşımı butonları olmalı ve çalışmalı. B, A'nın sesini duymalı ve paylaştığı ekranı görmeli. 5. adımdaki kodla bakılınca `video.canPublishSources` `["microphone","screen_share","screen_share_audio"]` olmalı. `[ ] dev`
+7. **Görüntülü kanal ve özel sohbet:** A `goruntulu` kanalına girsin → kamera butonu olmalı ve kamera açılmalı; B görüntüyü görmeli. A ile B'nin özel sohbetinde görüntülü aramayı açın (`?video=true`) → kamera ve ekran paylaşımı çalışmalı. `[ ] dev`
+8. **Atılan kullanıcı (bilinen açık, F-38):** B `sesli` kanalındayken A, B'yi sunucudan atsın.
+   - **Şu anki beklenen davranış:** B'nin LiveKit bağlantısı **kopmaz**; B konuşmaya ve dinlemeye devam edebilir. Gözlenen sonucu not edin.
+   - B sayfayı yenilediğinde S'ye erişimi olmadığı için yönlenmeli. Kanal adresine doğrudan bir token isteği **403** dönmeli.
+   - Düzeltmesi F-38'de (LiveKit `removeParticipant`).
+   `[ ] dev`
+9. **10 dakikadan uzun oturum:** A ve B `sesli` kanalında **en az 12 dakika** kalsın → bağlantı kopmamalı. Ardından A'nın DevTools'unda Ağ → **Offline**'ı 5 saniye açıp kapatın → A odaya kendiliğinden geri bağlanmalı. Bağlı kalındıkça LiveKit sunucusu token'ı yeniler; 10 dakikalık ömür yalnızca ilk bağlanmayı sınırlar. Geri bağlanamazsa adımı başarısız sayın ve konsoldaki LiveKit hatasını not edin; bu durumda `TOKEN_TTL` uzatılmalı. `[ ] dev  [ ] prod`
+10. **Adı olmayan Clerk hesabı:** Ad-soyad alanları boş bir hesapla (ör. yalnızca e-postayla kayıt) sesli kanala girin → token alınmalı ve oda açılmalı. Eskiden token hiç istenmiyordu ve ekran sonsuza kadar "Yükleniyor"da kalıyordu. `[ ] dev  [ ] prod`
+
+| Adım | dev | prod |
+|---|---|---|
+| 1–2 | [ ] | — |
+| 3–5 | [ ] | — |
+| 6–7 | [ ] | — |
+| 8 (F-38) | [ ] | — |
+| 9–10 | [ ] | [ ] |

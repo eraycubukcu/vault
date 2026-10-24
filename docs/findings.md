@@ -23,7 +23,7 @@ Doğrulama durumu:
 |---|---|---|
 | F-01 | 🔴 | Mesaj geçmişi API'leri üyelik kontrolü yapmıyor |
 | F-02 | 🔴 | Socket.IO olayları tüm istemcilere yayınlanıyor, kimlik doğrulama yok |
-| F-03 | 🔴 | LiveKit token'ı yetki kontrolü olmadan veriliyor, kimliğe bürünme mümkün |
+| F-03 | 🔴 | ~~LiveKit token'ı yetki kontrolü olmadan veriliyor, kimliğe bürünme mümkün~~ (Görev 6'da kapandı) |
 | F-04 | 🔴 | Push aboneliği global ve `sendNotification` herkese açık |
 | F-05 | 🟠 | `useChatQuery` / `ChatMessages`: hook kuralları ihlal ediliyor, sayfalama çalışmıyor |
 | F-06 | 🟠 | Push aboneliği yanlış kodlanıyor ve hiçbir olaya bağlı değil |
@@ -58,6 +58,7 @@ Doğrulama durumu:
 | F-35 | 🔵 | Atma/ayrılmada silinen özel sohbetin karşı tarafı odada kalıyor |
 | F-36 | 🔵 | `getOwnedServerChatIds` tüm üye ID'lerini `$in` listesiyle sorguluyor |
 | F-37 | 🔵 | `SocketProvider`'da paylaşılan `retry` değişkeni bir zamanlayıcıyı kaçırabiliyor |
+| F-38 | 🟡 | Sunucudan atılan, ayrılan ya da kanalı silinen kullanıcı LiveKit odasında kalıyor |
 
 ---
 
@@ -87,6 +88,7 @@ Doğrulama durumu:
   - `identity` olarak istemcinin gönderdiği `username` kullanılıyor.
 - **Etki:** Giriş yapmış herhangi bir kullanıcı herhangi bir ses/görüntü odasına başka bir isimle katılabilir, yayın yapabilir ve dinleyebilir. Aynı ad-soyada sahip iki kullanıcı aynı `identity`'yi alır ve biri diğerini odadan düşürür.
 - **Durum:** Kodda doğrulandı.
+- **Kapanış (Görev 6):** Token yalnızca kanalın sunucusundaki üyeye ya da özel sohbetin tarafına veriliyor (`getChannelAccess` / `getConversationAccess`); TEXT kanal için verilmiyor. Oda adı DB satırının kimliği. `identity = profile.id`, `name = profile.name`; `username` parametresi kaldırıldı. Ömür 10 dakika, `canUpdateOwnMetadata: false`, yönetici yetkisi yok; sesli kanalda kamera kaynağı kapalı. Testler: `tests/app/api/livekit.test.ts`, `tests/components/media-room.test.tsx`. Atılan kullanıcının açık bağlantısı için bkz. F-38.
 
 ### F-04: Push aboneliği global ve `sendNotification` herkese açık
 - **Yer:** `app/actions.ts:5-48`
@@ -393,3 +395,15 @@ Görev 5'in (F-25, F-29, F-27'nin atma kısmı) bağımsız incelemesinde kritik
 - **Durum:** Kodda doğrulandı.
 - **Ele alınacağı görev:** Görev 14 ya da socket istemcisine dokunan ilk görev. Yeni zamanlayıcı kurmadan önce `clearTimeout(retry)` çağrılmalı.
 
+---
+
+## Sonradan eklenenler (Paket 6)
+
+### F-38: Sunucudan atılan, ayrılan ya da kanalı silinen kullanıcı LiveKit odasında kalıyor
+- **Yer:** `app/api/members/[memberId]/route.ts` (DELETE), `app/api/servers/[serverId]/leave/route.ts`, `app/api/channels/[channelId]/route.ts` (DELETE), `app/api/servers/[serverId]/route.ts` (DELETE)
+- **Kanıt:**
+  - LiveKit token'ı yalnızca odaya bağlanırken doğrulanıyor. Bağlı katılımcının token'ını LiveKit sunucusu kendisi yeniliyor; uygulama üyeliğin bittiğini LiveKit'e hiç bildirmiyor (`RoomServiceClient` kullanılmıyor).
+  - Görev 6 sonrası: atılmadan önce alınmış ama kullanılmamış bir token en fazla 10 dakika (`TOKEN_TTL`) daha geçerli. Yeni token isteği 403 dönüyor.
+- **Etki:** Atılan üye, sayfayı yenileyene ya da bağlantısı kalıcı olarak kopana kadar ses/görüntü odasını dinlemeye ve yayın yapmaya devam edebiliyor. Kullanılmamış token'la 10 dakika içinde yeniden girebiliyor. Kanal silinince LiveKit odası boşalana kadar yaşıyor.
+- **Durum:** Kodda doğrulandı (LiveKit davranışı belgeden; elle doğrulama: `docs/elle-test.md` Paket 6, 8. adım).
+- **Ele alınacağı görev:** Yeni bir görev (Görev 5'teki socket tahliyesinin LiveKit karşılığı). Atma ve ayrılmada `RoomServiceClient.removeParticipant(room, profileId)` çağrılmalı (sunucunun AUDIO/VIDEO kanalları ve silinen özel sohbetler için). Kanal ya da sunucu silinince `deleteRoom(room)` çağrılmalı. LiveKit hatası silme işlemini başarısız kılmamalı.

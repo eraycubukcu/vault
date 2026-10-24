@@ -59,6 +59,9 @@ Doğrulama durumu:
 | F-36 | 🔵 | `getOwnedServerChatIds` tüm üye ID'lerini `$in` listesiyle sorguluyor |
 | F-37 | 🔵 | `SocketProvider`'da paylaşılan `retry` değişkeni bir zamanlayıcıyı kaçırabiliyor |
 | F-38 | 🟡 | Sunucudan atılan, ayrılan ya da kanalı silinen kullanıcı LiveKit odasında kalıyor |
+| F-39 | 🔵 | LiveKit odasında görünen ad eşsiz değil; aynı ad-soyadla başkası gibi görünmek hâlâ mümkün |
+| F-40 | 🔵 | `MediaRoom` token hatasında yeniden deneme sunmuyor |
+| F-41 | 🔵 | Paket 6 testlerinde iki boşluk: sohbet oda adı ve kamera butonu bağlantısı |
 
 ---
 
@@ -88,7 +91,7 @@ Doğrulama durumu:
   - `identity` olarak istemcinin gönderdiği `username` kullanılıyor.
 - **Etki:** Giriş yapmış herhangi bir kullanıcı herhangi bir ses/görüntü odasına başka bir isimle katılabilir, yayın yapabilir ve dinleyebilir. Aynı ad-soyada sahip iki kullanıcı aynı `identity`'yi alır ve biri diğerini odadan düşürür.
 - **Durum:** Kodda doğrulandı.
-- **Kapanış (Görev 6):** Token yalnızca kanalın sunucusundaki üyeye ya da özel sohbetin tarafına veriliyor (`getChannelAccess` / `getConversationAccess`); TEXT kanal için verilmiyor. Oda adı DB satırının kimliği. `identity = profile.id`, `name = profile.name`; `username` parametresi kaldırıldı. Ömür 10 dakika, `canUpdateOwnMetadata: false`, yönetici yetkisi yok; sesli kanalda kamera kaynağı kapalı. Testler: `tests/app/api/livekit.test.ts`, `tests/components/media-room.test.tsx`. Atılan kullanıcının açık bağlantısı için bkz. F-38.
+- **Kapanış (Görev 6):** Token yalnızca kanalın sunucusundaki üyeye ya da özel sohbetin tarafına veriliyor (`getChannelAccess` / `getConversationAccess`); TEXT kanal için verilmiyor. Oda adı DB satırının kimliği. `identity = profile.id`, `name = profile.name`; `username` parametresi kaldırıldı. Ömür 10 dakika, `canUpdateOwnMetadata: false`, yönetici yetkisi yok. Sesli kanalda token `camera` kaynağını içermiyor ve kamera butonu gizleniyor. Ancak LiveKit parça kaynağını istemcinin beyanına göre kabul ediyor; değiştirilmiş bir istemci kamerasını `screen_share` olarak yayınlayabilir. Bu bir arayüz kuralı, güvenlik garantisi değil. Testler: `tests/app/api/livekit.test.ts`, `tests/components/media-room.test.tsx`. Atılan kullanıcının açık bağlantısı için bkz. F-38.
 
 ### F-04: Push aboneliği global ve `sendNotification` herkese açık
 - **Yer:** `app/actions.ts:5-48`
@@ -406,4 +409,32 @@ Görev 5'in (F-25, F-29, F-27'nin atma kısmı) bağımsız incelemesinde kritik
   - Görev 6 sonrası: atılmadan önce alınmış ama kullanılmamış bir token en fazla 10 dakika (`TOKEN_TTL`) daha geçerli. Yeni token isteği 403 dönüyor.
 - **Etki:** Atılan üye, sayfayı yenileyene ya da bağlantısı kalıcı olarak kopana kadar ses/görüntü odasını dinlemeye ve yayın yapmaya devam edebiliyor. Kullanılmamış token'la 10 dakika içinde yeniden girebiliyor. Kanal silinince LiveKit odası boşalana kadar yaşıyor.
 - **Durum:** Kodda doğrulandı (LiveKit davranışı belgeden; elle doğrulama: `docs/elle-test.md` Paket 6, 8. adım).
+- **Ek (Paket 6 bağımsız incelemesi):** Bağlı katılımcı ağ kopmasında da geri bağlanabiliyor; livekit-client sunucunun yenilediği token'ı hem resume hem tam yeniden katılmada kullanıyor. Özel sohbette cascade ile silinen sohbetin odasında iki taraf da kalıyor. Yönetici kanal türünü değiştirdiğinde (VIDEO → AUDIO/TEXT, `app/api/channels/[channelId]/route.ts` PATCH) bağlı katılımcılar eski yetkilerini koruyor; bu durumda `updateParticipant` ya da `deleteRoom` çağrılmalı.
 - **Ele alınacağı görev:** Yeni bir görev (Görev 5'teki socket tahliyesinin LiveKit karşılığı). Atma ve ayrılmada `RoomServiceClient.removeParticipant(room, profileId)` çağrılmalı (sunucunun AUDIO/VIDEO kanalları ve silinen özel sohbetler için). Kanal ya da sunucu silinince `deleteRoom(room)` çağrılmalı. LiveKit hatası silme işlemini başarısız kılmamalı.
+
+Paket 6'nın bağımsız incelemesinde kritik bulgu çıkmadı. Önemli bulgu (atılan kullanıcı odada kalıyor) F-38 olarak zaten açıktı; incelemenin kanal türü değişikliği notu oraya eklendi. F-03'ün kapanış notundaki "sesli kanalda kamera kapalı" ifadesi garanti gibi okunduğu için düzeltildi. Aşağıdakiler ertelendi:
+
+### F-39: LiveKit odasında görünen ad eşsiz değil
+- **Yer:** `app/api/livekit/route.ts` (`name: profile.name`), `lib/get-or-create-profile.ts`
+- **Kanıt:** `identity` artık eşsiz (`profile.id`); ama odada yalnızca `name` görünüyor. `profile.name`, ilk girişte kullanıcının Clerk'te seçtiği ad-soyaddan bir kez kopyalanıyor. Soyadı boşsa ad `"Ali null"` gibi oluşuyor (eski kod).
+- **Etki:** Biri bilinen birinin ad-soyadını seçip odada onunla aynı adla görünebilir. Birbirini düşürme sorunu kapandı, görsel karışıklık kalıyor.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 15 (ya da arayüz işi). Katılımcı kutucuğunda profil resmi gösterilmeli; `null` birleştirmesi `get-or-create-profile.ts`'te düzeltilmeli.
+
+### F-40: `MediaRoom` token hatasında yeniden deneme sunmuyor
+- **Yer:** `components/media-room.tsx` (token `useEffect`)
+- **Kanıt:** Geçici bir 500 ya da ağ hatası "Odaya bağlanılamadı" mesajını kullanıcı başka sayfaya geçene kadar ekranda bırakıyor. Clerk middleware'i oturumsuz API isteğini route'tan önce 404 ile reddederse kullanıcı erişim mesajı yerine bu genel mesajı görüyor.
+- **Etki:** Kullanıcı deneyimi; güvenlik etkisi yok.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 11 (hata kodları) ya da Görev 13. Bir "Tekrar dene" butonu, effect bağımlılığındaki bir sayacı artırmalı.
+
+### F-41: Paket 6 testlerinde iki boşluk
+- **Yer:** `tests/app/api/livekit.test.ts`, `tests/components/media-room.test.tsx`
+- **Kanıt:**
+  - Sohbet oda adı testinde sorgu değeri ile `conversation.id` aynı. Sohbet dalı `room: chatId` olsa da test geçer. Kanal testindeki büyük/küçük harf yöntemi burada da kullanılmalı.
+  - `VideoConference2`'nin `ControlBar`'a `camera: false` geçirdiği test edilmiyor; yalnızca `canPublishCamera` test ediliyor.
+  - Eski token testi `resp.json()`'un `setTimeout(0)`'dan önce bitmesine dayanıyor (bugün kararlı).
+  - "Clerk adı olmasa da token ister" testi yalnızca gerilemeye karşı koruma; `useUser` artık kullanılmıyor.
+- **Etki:** İleride bir gerileme fark edilmeyebilir. Bugünkü kod doğru (incelemede elle okundu).
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** LiveKit'e dokunan bir sonraki görev (F-38).

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Bell, BellOff } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 
 import { subscribeUser, unsubscribeUser } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -23,13 +24,65 @@ function toInput(sub: PushSubscription) {
     };
 }
 
+// Bu tarayıcının push aboneliğini hangi Clerk kullanıcısının açtığı. Paylaşılan cihazda
+// çıkış yapan ya da hesap değiştiren kullanıcının bildirimleri sonraki kişiye gelmesin.
+export const PUSH_OWNER_KEY = "vault-push-owner";
+
+const readOwner = () => {
+    try {
+        return localStorage.getItem(PUSH_OWNER_KEY);
+    } catch {
+        return null;
+    }
+};
+
+const writeOwner = (userId: string | null) => {
+    try {
+        if (userId) localStorage.setItem(PUSH_OWNER_KEY, userId);
+        else localStorage.removeItem(PUSH_OWNER_KEY);
+    } catch {
+        // Depolama kapalıysa sahip bilinmez; abonelik sonraki açılışta kaldırılır.
+    }
+};
+
+const pushSupported = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+
+// Oturumdaki kullanıcıya ait değilse bu tarayıcının aboneliğini kaldırır. Tarayıcıda
+// kaldırılan abonelik push servisinde de geçersizleşir; sunucudaki eski kayıt ilk
+// gönderimde 404/410 alınca silinir (lib/push.ts).
+async function dropForeignSubscription(userId: string | null): Promise<boolean> {
+    const registration = await navigator.serviceWorker.getRegistration?.("/");
+    const existing = await registration?.pushManager.getSubscription();
+    if (!existing || (userId && readOwner() === userId)) {
+        return false;
+    }
+    await existing.unsubscribe();
+    writeOwner(null);
+    return true;
+}
+
+/** Kök layout'ta durur: oturum kapanınca ya da hesap değişince eski aboneliği kaldırır. */
+export const PushSessionGuard = () => {
+    const { isLoaded, userId } = useAuth();
+
+    useEffect(() => {
+        if (!isLoaded || !pushSupported()) {
+            return;
+        }
+        dropForeignSubscription(userId ?? null).catch((error) => console.log("[PUSH_GUARD]", error));
+    }, [isLoaded, userId]);
+
+    return null;
+};
+
 export const PushToggle = () => {
+    const { userId } = useAuth();
     const [supported, setSupported] = useState(false);
     const [subscription, setSubscription] = useState<PushSubscription | null>(null);
     const [busy, setBusy] = useState(false);
 
     useEffect(() => {
-        if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        if (!pushSupported() || !userId) {
             return;
         }
         let cancelled = false;
@@ -39,14 +92,20 @@ export const PushToggle = () => {
                     scope: "/",
                     updateViaCache: "none",
                 });
-                const existing = await registration.pushManager.getSubscription();
+                let existing = await registration.pushManager.getSubscription();
                 if (cancelled) return;
                 setSupported(true);
-                setSubscription(existing);
-                // Tarayıcıdaki abonelik (ör. aynı cihazda başka hesaptan kalmış) oturumdaki profile bağlanır.
-                if (existing) {
-                    await subscribeUser(toInput(existing));
+                if (!existing) return;
+                // Başka (ya da bilinmeyen) bir hesabın aboneliği bu hesaba bağlanmaz, kaldırılır.
+                if (readOwner() !== userId) {
+                    await existing.unsubscribe();
+                    writeOwner(null);
+                    return;
                 }
+                // Kendi aboneliği: anahtarlar sunucuyla eşitlenir; reddedilirse kapalı görünür.
+                const { success } = await subscribeUser(toInput(existing));
+                if (!success) existing = null;
+                if (!cancelled) setSubscription(existing);
             } catch (error) {
                 console.log("[PUSH_REGISTER]", error);
             }
@@ -54,7 +113,7 @@ export const PushToggle = () => {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [userId]);
 
     async function enable() {
         setBusy(true);
@@ -66,6 +125,7 @@ export const PushToggle = () => {
             });
             const { success } = await subscribeUser(toInput(sub));
             if (success) {
+                writeOwner(userId ?? null);
                 setSubscription(sub);
             } else {
                 await sub.unsubscribe();
@@ -83,6 +143,7 @@ export const PushToggle = () => {
         try {
             const { endpoint } = subscription;
             await subscription.unsubscribe();
+            writeOwner(null);
             setSubscription(null);
             await unsubscribeUser(endpoint);
         } catch (error) {

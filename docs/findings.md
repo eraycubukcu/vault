@@ -101,7 +101,7 @@ Doğrulama durumu:
   - VAPID iletişim adresi yer tutucu olarak kalmış: `'<mailto:your-email@example.com>'`.
 - **Etki:** Herhangi bir istemci server action'ı çağırarak son abone olan kişiye istediği metinle bildirim gönderebilir. Abonelikler sunucu yeniden başladığında kaybolur.
 - **Durum:** Kodda doğrulandı.
-- **Kapanış (Görev 7):** Abonelikler `PushSubscription` modelinde, profile bağlı ve `endpoint` başına tek kayıt olarak saklanıyor. `subscribeUser` oturum istiyor ve girdiyi doğruluyor: `https` endpoint, base64url anahtarlar. `unsubscribeUser(endpoint)` yalnızca `{ endpoint, profileId }` koşuluyla siliyor. `sendNotification` action'ı silindi. Bildirim yalnızca sunucu içinden `lib/push.ts#notifyProfile` ile gönderiliyor (`server-only`). VAPID adresi yeni `VAPID_SUBJECT` ortam değişkeninden okunuyor; değişken `.env.example`'a ve `CLAUDE.md`'ye Görev 15'te eklenecek. Ayarlar her çağrıda okunuyor, bu yüzden modül yüklenirken artık hata fırlatılmıyor (eskiden yer tutucu adres yüzünden `app/actions.ts` içe aktarılınca hata veriyordu). Testler: `tests/app/actions.test.ts`, `tests/lib/push.test.ts`.
+- **Kapanış (Görev 7):** Abonelikler `PushSubscription` modelinde, profile bağlı ve `endpoint` başına tek kayıt olarak saklanıyor. `subscribeUser` oturum istiyor ve girdiyi doğruluyor. Endpoint yalnızca bilinen tarayıcı push servislerinden biri olabiliyor (FCM, Mozilla, WNS, Apple; port ve kullanıcı bilgisi olmadan). Anahtarlar base64url olmalı. Profil başına en fazla 10 abonelik tutuluyor; fazlası en eskiden başlayarak siliniyor. Gönderimde 10 sn zaman aşımı var (bağımsız inceleme: sunucu, kullanıcının verdiği rastgele adreslere istek atabiliyordu). `unsubscribeUser(endpoint)` yalnızca `{ endpoint, profileId }` koşuluyla siliyor. `sendNotification` action'ı silindi. Bildirim yalnızca sunucu içinden `lib/push.ts#notifyProfile` ile gönderiliyor (`server-only`). VAPID adresi yeni `VAPID_SUBJECT` ortam değişkeninden okunuyor; değişken `.env.example`'a ve `CLAUDE.md`'ye Görev 15'te eklenecek. Ayarlar her çağrıda okunuyor, bu yüzden modül yüklenirken artık hata fırlatılmıyor (eskiden yer tutucu adres yüzünden `app/actions.ts` içe aktarılınca hata veriyordu). Testler: `tests/app/actions.test.ts`, `tests/lib/push.test.ts`.
 
 ---
 
@@ -129,7 +129,7 @@ Doğrulama durumu:
   - İstemci bileşeni sunucu kütüphanesi olan `web-push`'u import ediyor (satır 22).
 - **Etki:** Push bildirimi özelliği fiilen yok, kod yarım kalmış durumda.
 - **Durum:** Kodda doğrulandı.
-- **Kapanış (Görev 7):** İstemci aboneliği `sub.toJSON()` ile gönderiyor; `TextDecoder` ve istemcideki `web-push` import'u kaldırıldı. Ölü `Page`, `PushNotificationManager` ve `InstallPrompt` silindi. Yeni `components/push-toggle.tsx` sol çubukta (tema düğmesinin üstünde) aç/kapat düğmesi sunuyor ve açılışta mevcut tarayıcı aboneliğini oturumdaki profile bağlıyor. Özel mesaj kaydedildikten sonra, alıcının hiçbir socket'i `chat:{conversationId}` odasında değilse alıcıya bildirim gidiyor. Başlık gönderenin adı, gövde içeriğin ilk 120 karakteri, URL `/servers/{serverId}/conversations/{gönderenin üye kimliği}`. Çağrı `await` edilmiyor; hatası loglanıyor. 404/410 dönen abonelik siliniyor. `sw.js` bildirimin `url`'sini (yalnızca aynı origin) açıyor ve olmayan `/badge.png` kaldırıldı. Kanal bildirimleri kapsam dışı. Testler: `tests/pages/api/socket/direct-messages-push.test.ts`, `tests/components/push-toggle.test.tsx`. Elle doğrulama: `docs/elle-test.md` Paket 7.
+- **Kapanış (Görev 7):** İstemci aboneliği `sub.toJSON()` ile gönderiyor; `TextDecoder` ve istemcideki `web-push` import'u kaldırıldı. Ölü `Page`, `PushNotificationManager` ve `InstallPrompt` silindi. Yeni `components/push-toggle.tsx` sol çubukta (tema düğmesinin üstünde) aç/kapat düğmesi sunuyor Aboneliği açan Clerk kullanıcısı `localStorage`'da (`vault-push-owner`) tutuluyor. Kök layout'taki `PushSessionGuard`, oturum kapanınca ya da hesap değişince tarayıcı aboneliğini kaldırıyor. `PushToggle` de başka ya da bilinmeyen bir hesaptan kalmış aboneliği yeni hesaba bağlamıyor, kaldırıyor. Sunucudaki eski kayıt, push servisi ilk gönderimde 404/410 dönünce siliniyor; o ana kadar yalnızca ölü bir endpoint'e istek gidiyor. Depolama kapalıysa (gizli pencere vb.) her açılışta yeniden abone olmak gerekiyor. Özel mesaj kaydedildikten sonra, alıcının hiçbir socket'i `chat:{conversationId}` odasında değilse alıcıya bildirim gidiyor. Başlık gönderenin adı, gövde içeriğin ilk 120 karakteri, URL `/servers/{serverId}/conversations/{gönderenin üye kimliği}`. Çağrı `await` edilmiyor; hatası loglanıyor. 404/410 dönen abonelik siliniyor. `sw.js` bildirimin `url`'sini (yalnızca aynı origin) açıyor ve olmayan `/badge.png` kaldırıldı. Kanal bildirimleri kapsam dışı. Testler: `tests/pages/api/socket/direct-messages-push.test.ts`, `tests/components/push-toggle.test.tsx`. Elle doğrulama: `docs/elle-test.md` Paket 7.
 
 ### F-07: `return RedirectToSignIn` yönlendirme yapmıyor
 - **Yer:** `app/(main)/(routes)/servers/[serverId]/layout.tsx:16`, `.../servers/[serverId]/page.tsx:20`, `.../channels/[channelId]/page.tsx:25`, `.../conversations/[memberId]/page.tsx:31`
@@ -440,3 +440,74 @@ Paket 6'nın bağımsız incelemesinde kritik bulgu çıkmadı. Önemli bulgu (a
 - **Etki:** İleride bir gerileme fark edilmeyebilir. Bugünkü kod doğru (incelemede elle okundu).
 - **Durum:** İncelemede doğrulandı.
 - **Ele alınacağı görev:** LiveKit'e dokunan bir sonraki görev (F-38).
+
+---
+
+## Sonradan eklenenler (Paket 7 bağımsız incelemesi)
+
+Paket 7'nin bağımsız incelemesinde iki önemli bulgu çıktı ve ikisi de bu pakette düzeltildi:
+- Çıkış yapan kullanıcının aboneliği tarayıcıda ve sunucuda kalıyordu; paylaşılan cihazda DM önizlemeleri sonraki kişiye geliyordu.
+- Endpoint için yalnızca `https` şartı vardı ve sayı sınırı yoktu; sunucu iç ağa ya da rastgele adreslere istek atabiliyordu.
+
+Aşağıdakiler ertelendi:
+
+### F-42: Bilinen bir endpoint başka bir hesaba bağlanabiliyor
+- **Yer:** `app/actions.ts` (`subscribeUser`, upsert'in `update` dalı)
+- **Kanıt:** Upsert, var olan bir endpoint'in `profileId`'sini çağırana çeviriyor. Başka bir kullanıcının endpoint URL'sini öğrenen biri o kaydı kendine bağlayabilir; kurban bildirim almayı fark etmeden bırakır.
+- **Etki:** Düşük. Endpoint'ler tahmin edilemez ve yalnızca kurbanın tarayıcısında ve push servisinde bulunur. Bildirimler şifreli olduğu için saldırgan içeriği okuyamaz; yalnızca kurbanın bildirimlerini keser.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 10 ya da 12. Başka profile ait bir endpoint için güncelleme, anahtarlar (`p256dh` + `auth`) eşleşmiyorsa reddedilmeli.
+
+### F-43: Bildirim URL'si gönderenin sunucu kimliğini kullanıyor
+- **Yer:** `pages/api/socket/direct-messages/index.ts` (`url: /servers/${member.serverId}/...`)
+- **Kanıt:** Sohbet sayfası izleyicinin üyesini `serverId` + `profileId` ile buluyor. F-08 yüzünden iki tarafı farklı sunuculardaki bir sohbet oluşabiliyor; bu durumda bildirime tıklayan alıcı `/home`'a ya da yeni bir sohbete gidiyor.
+- **Etki:** Yalnızca F-08 kötüye kullanılınca. Normal sohbetlerde iki üye aynı sunucuda.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 9 (F-08). F-08 kapanınca sorun ortadan kalkar; yine de `recipient.serverId` kullanılmalı.
+
+### F-44: Bildirim düğmesinin durumu sunucuyla ayrışabiliyor, geri bildirim yok
+- **Yer:** `components/push-toggle.tsx` (`enable`)
+- **Kanıt:**
+  - `subscribeUser` ağ hatası fırlatırsa tarayıcı abone kalıyor ama düğme kapalı görünüyor.
+  - VAPID anahtarı değişirse eski abonelikler 403 alıyor. 403 "artık yok" sayılmadığı için kayıt silinmiyor.
+  - İzin reddedildiğinde (`Notification.permission === "denied"`) ya da `NEXT_PUBLIC_VAPID_PUBLIC_KEY` build'de yoksa düğme hiçbir şey yapmıyor; kullanıcıya bir şey söylenmiyor.
+- **Etki:** Kullanıcı deneyimi; güvenlik etkisi yok.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 13 ya da 15. `catch` içinde `sub.unsubscribe()` çağrılmalı. `options.applicationServerKey` güncel anahtarla karşılaştırılmalı. İzin engelliyse Türkçe bir ipucuyla düğme devre dışı bırakılmalı.
+
+### F-45: İki `PushToggle` örneği aynı anda upsert yapınca tekillik çakışması
+- **Yer:** `components/mobile-toggle.tsx` (`NavigationSideBar` ikinci kez mount ediliyor), `app/actions.ts`
+- **Kanıt:** Mobil menü açılınca ya da birkaç sekme aynı anda yüklenince eşitleme upsert'leri yarışıyor. MongoDB'de `endpoint` tekil indeksi varken Prisma upsert P2002 verebiliyor; sonuç `success:false` ve düğme kapalı görünüyor.
+- **Etki:** Düşük. Bir sonraki açılışta düzeliyor.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 11 (Prisma hataları). P2002'de güncellemeyi tekrar denemeli.
+
+### F-46: Bildirim gövdesi ve gruplama
+- **Yer:** `pages/api/socket/direct-messages/index.ts`, `public/sw.js`
+- **Kanıt:**
+  - Dosya mesajlarında `content = fileUrl`; bildirimde ham UploadThing adresi görünüyor.
+  - `slice(0, 120)` bir emojiyi ortadan bölebiliyor.
+  - `tag` yok; 20 mesaj 20 ayrı bildirim oluşturuyor.
+- **Etki:** Kullanıcı deneyimi.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 13 (dosya türü). `fileUrl` varsa "Dosya gönderdi" yazılmalı. Kırpma `Array.from(content).slice(0, 120)` ile yapılmalı. `showNotification`'a `tag: url` verilmeli.
+
+### F-47: `sw.js` sağlamlığı
+- **Yer:** `public/sw.js`
+- **Kanıt:** JSON olmayan bir payload'da `event.data.json()` hata fırlatıyor ve tarayıcı genel bir bildirim gösteriyor. Tıklayınca açık sekmeye odaklanmak yerine her seferinde yeni pencere açılıyor.
+- **Etki:** Kullanıcı deneyimi. Başka origin'e ya da `javascript:` adresine gitme engeli doğru çalışıyor.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Görev 15. Ayrıştırma try/catch içine alınmalı; `clients.matchAll` ile açık sekme bulunup `focus`/`navigate` yapılmalı.
+
+### F-48: Paket 7 testlerindeki boşluklar
+- **Yer:** `tests/`
+- **Kanıt:**
+  - `sw.js` için test yok (tıklama URL'si, origin kontrolü).
+  - `initial-modal.tsx`'in `web-push` ya da `@/app/actions` import etmediğini denetleyen bir test yok.
+  - `isProfileInChat` yalnızca sahte `io` ile test ediliyor. Gerçek bir `chat:join` sonrası `fetchSockets()`'in `data.profileId`'yi bulduğunu gösteren entegrasyon testi yok (`tests/integration/socket-rooms.test.ts` kullanılabilir).
+  - "Yanıt beklemez" testi, handler `isProfileInChat`'i `await` etse de geçer; yalnızca `notifyProfile`'ın beklenmediğini kanıtlıyor.
+- **Etki:** İleride bir gerileme fark edilmeyebilir. Bugünkü kod doğru.
+- **Durum:** İncelemede doğrulandı.
+- **Ele alınacağı görev:** Push'a dokunan bir sonraki görev.
+
+Not (inceleme): Yeni `VAPID_SUBJECT` değişkeni tanımlı değilse bildirimler yalnızca bir log satırıyla sessizce gönderilmiyor. `.env.example` ve `CLAUDE.md` güncellemesi Görev 15'te; o zamana kadar dağıtımda elle eklenmeli.

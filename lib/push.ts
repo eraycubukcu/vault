@@ -17,6 +17,9 @@ function vapidDetails() {
     return { subject, publicKey, privateKey };
 }
 
+// Yanıt vermeyen bir push servisi DM isteğinin arkasında bağlantı biriktirmesin.
+const SEND_TIMEOUT_MS = 10_000;
+
 // Push servisi bu yanıtları "abonelik artık yok" anlamında döner.
 const isGone = (error: unknown) => {
     const status = (error as { statusCode?: number } | null)?.statusCode;
@@ -43,7 +46,7 @@ export async function notifyProfile(profileId: string, payload: PushPayload): Pr
                     await webpush.sendNotification(
                         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
                         body,
-                        { vapidDetails: vapid, TTL: 60 * 60 },
+                        { vapidDetails: vapid, TTL: 60 * 60, timeout: SEND_TIMEOUT_MS },
                     );
                 } catch (error) {
                     if (!isGone(error)) {

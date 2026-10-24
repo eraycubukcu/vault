@@ -43,7 +43,7 @@ Bir adım başarısız olursa adım numarasını, modu (dev/prod), tarayıcı ko
 | 7: DM push bildirimleri | 0 (`prisma db push`, VAPID ortam değişkenleri) | [ ] | [ ] |
 | 7 | 1–3 (abone ol, bildirim gelir ve doğru sohbet açılır, sohbet açıkken gelmez) | [ ] | [ ] |
 | 7 | 4–6 (abonelikten çık, iki cihaz, süresi dolan abonelik) | [ ] | [ ] |
-| 7 | 7–8 (aynı tarayıcıda hesap değiştirme, eski `sendNotification` yok) | [ ] | [ ] |
+| 7 | 7–8 (çıkış ve hesap değiştirme, eski `sendNotification` yok, yabancı endpoint reddi) | [ ] | [ ] |
 
 **Önerilen sıra:**
 1. Paket 4'ün 13. adımı: diğer socket adımları buna bağlı.
@@ -209,8 +209,8 @@ JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
 4. **Abonelikten çıkma:** B zile tekrar bassın ("Bildirimleri kapat") → kayıt veritabanından silinmeli. A mesaj gönderince bildirim gelmemeli. `[ ] dev  [ ] prod`
 5. **İki cihaz:** B iki tarayıcıda (ya da bilgisayar + telefon) abone olsun → B'nin iki kaydı olmalı ve A'nın mesajı ikisine de bildirim olarak gitmeli. A da abone olsun; A'nın aboneliği B'ninkileri silmemeli (eskiden son abone herkesin yerine geçiyordu). `[ ] dev  [ ] prod`
 6. **Süresi dolan abonelik (İnceleme Odağı 5):** B'nin bir tarayıcısında site izinlerinden bildirim iznini kaldırın ya da site verilerini silin (uygulama içinden çıkmadan). A mesaj göndersin → mesaj normal gönderilmeli (200, sohbete düşmeli). Push servisi 404/410 dönerse o kayıt veritabanından silinmeli; sunucu konsolunda hata yığını olmamalı. Bazı tarayıcılar endpoint'i hemen geçersiz kılmaz; kayıt kalırsa bunu not edin, bu bir hata değil. `[ ] dev  [ ] prod`
-7. **Aynı tarayıcıda hesap değiştirme:** B abone olduğu tarayıcıda çıkış yapıp C ile girsin. Uygulama açıldığında mevcut abonelik C'ye bağlanmalı (kaydın `profileId`'si C olmalı). A'nın B'ye gönderdiği mesaj bu tarayıcıya **bildirim olarak gelmemeli**. Bilinen açık (F-43): C uygulamayı açmadan önce, yani yalnızca çıkış yapılmışken, B'nin bildirimleri bu tarayıcıya gelmeye devam eder. `[ ] dev  [ ] prod`
-8. **Herkese açık `sendNotification` kaldırıldı:** Tarayıcının Ağ sekmesinde zile basınca giden server action isteği (`Next-Action` başlığı) görülmeli. Sayfa kaynağında ya da JS paketinde `sendNotification` adlı bir action olmamalı. Oturumu kapalı bir pencereden aynı action isteği tekrarlanırsa kayıt oluşmamalı. `[ ] dev  [ ] prod`
+7. **Çıkış ve hesap değiştirme (paylaşılan cihaz):** B abone olduğu tarayıcıda Clerk menüsünden çıkış yapsın → `/home`'a gidilmeli ve DevTools → Application → Service Workers → Push Subscription boş olmalı. A, B'ye mesaj göndersin → bu tarayıcıya **bildirim gelmemeli**. Sunucudaki B kaydı, push servisi bu ilk gönderimde 404/410 dönünce silinmeli. Ardından aynı tarayıcıda C ile girin → zil **kapalı** görünmeli; C'ye otomatik abonelik açılmamalı (kayıt C'ye bağlanmamalı). Gizli pencerede (localStorage kalıcı değilse) her açılışta aboneliğin kapalı görünmesi beklenen davranış. `[ ] dev  [ ] prod`
+8. **Herkese açık `sendNotification` kaldırıldı:** Tarayıcının Ağ sekmesinde zile basınca giden server action isteği (`Next-Action` başlığı) görülmeli. Sayfa kaynağında ya da JS paketinde `sendNotification` adlı bir action olmamalı. Oturumu kapalı bir pencereden aynı action isteği tekrarlanırsa kayıt oluşmamalı. Oturum açıkken isteğin gövdesindeki endpoint `https://example.com/x` ya da `https://10.0.0.5/` yapılıp tekrarlanırsa (DevTools'ta isteği kopyalayıp `fetch` ile) yanıt `success:false` olmalı ve kayıt oluşmamalı. `[ ] dev  [ ] prod`
 
 | Adım | dev | prod |
 |---|---|---|

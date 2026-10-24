@@ -51,6 +51,8 @@ describe("notifyProfile", () => {
             JSON.stringify({ title: payload.title, body: payload.body, url: payload.url }),
             expect.objectContaining({
                 vapidDetails: { subject: "mailto:ops@example.com", publicKey: "public-key", privateKey: "private-key" },
+                // Yanıt vermeyen bir push servisi bağlantıyı süresiz açık tutmamalı.
+                timeout: expect.any(Number),
             }),
         );
         expect(db.pushSubscription.deleteMany).not.toHaveBeenCalled();

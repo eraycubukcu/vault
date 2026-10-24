@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { NavigationItem } from "./navigation-item";
 import { NavigationAction } from "./navigation-action";
 import { ModeToggle } from "@/components/mode-toggle";
+import { PushToggle } from "@/components/push-toggle";
 import { UserButton } from "@clerk/nextjs";
 
 import * as motion from "motion/react-client"
@@ -40,6 +41,7 @@ export const NavigationSideBar = async () => {
                 ))}
             </ScrollArea>
             <div className="pb-3 mt-auto flex items-center flex-col gap-y-4">
+                <PushToggle />
                 <ModeToggle />
                 <UserButton afterSwitchSessionUrl="/" appearance={{
                     elements:{

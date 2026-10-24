@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { messageInclude } from "@/lib/public-profile";
 import { NextApiResponseServerIo } from "@/types";
 import { NextApiRequest } from "next";
-import { emitToChat } from "@/lib/socket/server";
+import { emitToChat, isProfileInChat } from "@/lib/socket/server";
+import { notifyProfile } from "@/lib/push";
 
 export default async function handler(
     req: NextApiRequest,
@@ -72,6 +73,17 @@ export default async function handler(
 
         const channelKey = `chat:${conversationId}:messages`;
         emitToChat(conversationId as string, channelKey, message);
+
+        // Alıcı sohbeti açık tutmuyorsa push bildirimi; yanıt bunu beklemez.
+        const recipient = member.id === conversation.memberOne.id ? conversation.memberTwo : conversation.memberOne;
+        isProfileInChat(recipient.profileId, conversation.id)
+            .catch(() => false)
+            .then((inChat) => inChat ? undefined : notifyProfile(recipient.profileId, {
+                title: profile.name,
+                body: String(content).slice(0, 120),
+                url: `/servers/${member.serverId}/conversations/${member.id}`,
+            }))
+            .catch((error) => console.log("[DIRECT_MESSAGES_PUSH]", error));
 
 
         return res.status(200).json(message)

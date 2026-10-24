@@ -1,22 +1,21 @@
+// Web Push: lib/push.ts#notifyProfile payload'ı { title, body, url } gönderir.
 self.addEventListener('push', function (event) {
-    if (event.data) {
-      const data = event.data.json()
-      const options = {
-        body: data.body,
-        icon: data.icon || '/icon.png',
-        badge: '/badge.png',
-        vibrate: [100, 50, 100],
-        data: {
-          dateOfArrival: Date.now(),
-          primaryKey: '2',
-        },
-      }
-      event.waitUntil(self.registration.showNotification(data.title, options))
-    }
-  })
-   
-  self.addEventListener('notificationclick', function (event) {
-    console.log('Notification click received.')
-    event.notification.close()
-    event.waitUntil(clients.openWindow('https://discordclone-production-c5a2.up.railway.app'))
-  })
+  if (!event.data) return
+  const data = event.data.json()
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icon.png',
+      vibrate: [100, 50, 100],
+      data: { url: data.url || '/' },
+    })
+  )
+})
+
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close()
+  // Yalnızca bu uygulamanın kendi sayfaları açılır.
+  const url = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin)
+  const target = url.origin === self.location.origin ? url.href : self.location.origin + '/'
+  event.waitUntil(clients.openWindow(target))
+})

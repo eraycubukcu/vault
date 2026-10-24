@@ -24,9 +24,9 @@ Doğrulama durumu:
 | F-01 | 🔴 | Mesaj geçmişi API'leri üyelik kontrolü yapmıyor |
 | F-02 | 🔴 | Socket.IO olayları tüm istemcilere yayınlanıyor, kimlik doğrulama yok |
 | F-03 | 🔴 | ~~LiveKit token'ı yetki kontrolü olmadan veriliyor, kimliğe bürünme mümkün~~ (Görev 6'da kapandı) |
-| F-04 | 🔴 | Push aboneliği global ve `sendNotification` herkese açık |
+| F-04 | 🔴 | ~~Push aboneliği global ve `sendNotification` herkese açık~~ (Görev 7'de kapandı) |
 | F-05 | 🟠 | `useChatQuery` / `ChatMessages`: hook kuralları ihlal ediliyor, sayfalama çalışmıyor |
-| F-06 | 🟠 | Push aboneliği yanlış kodlanıyor ve hiçbir olaya bağlı değil |
+| F-06 | 🟠 | ~~Push aboneliği yanlış kodlanıyor ve hiçbir olaya bağlı değil~~ (Görev 7'de kapandı) |
 | F-07 | 🟠 | `return RedirectToSignIn` yönlendirme yapmıyor |
 | F-08 | 🟠 | Özel sohbet hedef üyeyi doğrulamıyor |
 | F-09 | 🟡 | Sunucu Admin/Moderatörü özel sohbetteki mesajları silebiliyor |
@@ -101,6 +101,7 @@ Doğrulama durumu:
   - VAPID iletişim adresi yer tutucu olarak kalmış: `'<mailto:your-email@example.com>'`.
 - **Etki:** Herhangi bir istemci server action'ı çağırarak son abone olan kişiye istediği metinle bildirim gönderebilir. Abonelikler sunucu yeniden başladığında kaybolur.
 - **Durum:** Kodda doğrulandı.
+- **Kapanış (Görev 7):** Abonelikler `PushSubscription` modelinde, profile bağlı ve `endpoint` başına tek kayıt olarak saklanıyor. `subscribeUser` oturum istiyor ve girdiyi doğruluyor: `https` endpoint, base64url anahtarlar. `unsubscribeUser(endpoint)` yalnızca `{ endpoint, profileId }` koşuluyla siliyor. `sendNotification` action'ı silindi. Bildirim yalnızca sunucu içinden `lib/push.ts#notifyProfile` ile gönderiliyor (`server-only`). VAPID adresi yeni `VAPID_SUBJECT` ortam değişkeninden okunuyor; değişken `.env.example`'a ve `CLAUDE.md`'ye Görev 15'te eklenecek. Ayarlar her çağrıda okunuyor, bu yüzden modül yüklenirken artık hata fırlatılmıyor (eskiden yer tutucu adres yüzünden `app/actions.ts` içe aktarılınca hata veriyordu). Testler: `tests/app/actions.test.ts`, `tests/lib/push.test.ts`.
 
 ---
 
@@ -128,6 +129,7 @@ Doğrulama durumu:
   - İstemci bileşeni sunucu kütüphanesi olan `web-push`'u import ediyor (satır 22).
 - **Etki:** Push bildirimi özelliği fiilen yok, kod yarım kalmış durumda.
 - **Durum:** Kodda doğrulandı.
+- **Kapanış (Görev 7):** İstemci aboneliği `sub.toJSON()` ile gönderiyor; `TextDecoder` ve istemcideki `web-push` import'u kaldırıldı. Ölü `Page`, `PushNotificationManager` ve `InstallPrompt` silindi. Yeni `components/push-toggle.tsx` sol çubukta (tema düğmesinin üstünde) aç/kapat düğmesi sunuyor ve açılışta mevcut tarayıcı aboneliğini oturumdaki profile bağlıyor. Özel mesaj kaydedildikten sonra, alıcının hiçbir socket'i `chat:{conversationId}` odasında değilse alıcıya bildirim gidiyor. Başlık gönderenin adı, gövde içeriğin ilk 120 karakteri, URL `/servers/{serverId}/conversations/{gönderenin üye kimliği}`. Çağrı `await` edilmiyor; hatası loglanıyor. 404/410 dönen abonelik siliniyor. `sw.js` bildirimin `url`'sini (yalnızca aynı origin) açıyor ve olmayan `/badge.png` kaldırıldı. Kanal bildirimleri kapsam dışı. Testler: `tests/pages/api/socket/direct-messages-push.test.ts`, `tests/components/push-toggle.test.tsx`. Elle doğrulama: `docs/elle-test.md` Paket 7.
 
 ### F-07: `return RedirectToSignIn` yönlendirme yapmıyor
 - **Yer:** `app/(main)/(routes)/servers/[serverId]/layout.tsx:16`, `.../servers/[serverId]/page.tsx:20`, `.../channels/[channelId]/page.tsx:25`, `.../conversations/[memberId]/page.tsx:31`

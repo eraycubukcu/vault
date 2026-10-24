@@ -40,6 +40,10 @@ Bir adım başarısız olursa adım numarasını, modu (dev/prod), tarayıcı ko
 | 6 | 6–7 (sesli kanalda kamera yok, görüntülü kanal ve özel sohbette var) | [ ] | — |
 | 6 | 8 (atılan kullanıcı; bilinen açık F-38) | [ ] | — |
 | 6 | 9–10 (10 dakikadan uzun oturum ve yeniden bağlanma, adı olmayan Clerk hesabı) | [ ] | [ ] |
+| 7: DM push bildirimleri | 0 (`prisma db push`, VAPID ortam değişkenleri) | [ ] | [ ] |
+| 7 | 1–3 (abone ol, bildirim gelir ve doğru sohbet açılır, sohbet açıkken gelmez) | [ ] | [ ] |
+| 7 | 4–6 (abonelikten çık, iki cihaz, süresi dolan abonelik) | [ ] | [ ] |
+| 7 | 7–8 (aynı tarayıcıda hesap değiştirme, eski `sendNotification` yok) | [ ] | [ ] |
 
 **Önerilen sıra:**
 1. Paket 4'ün 13. adımı: diğer socket adımları buna bağlı.
@@ -188,3 +192,29 @@ JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
 | 6–7 | [ ] | — |
 | 8 (F-38) | [ ] | — |
 | 9–10 | [ ] | [ ] |
+
+---
+
+## Paket 7 — Özel mesaj push bildirimleri (Görev 7: F-04, F-06)
+
+**Hazırlık:**
+- Push yalnızca güvenli bağlamda çalışır: dev için `npm run dev2` (HTTPS), prod için HTTPS arkasında `npm run build && npm start`. Tarayıcı bildirim iznini sorduğunda izin verin.
+- `.env` içinde `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` ve **yeni** `VAPID_SUBJECT` dolu olmalı (ör. `VAPID_SUBJECT=mailto:siz@ornek.com`). Üçünden biri eksikse sunucu bildirim göndermez ve konsola `[PUSH] VAPID ayarları eksik` yazar.
+- Hesaplar: aynı sunucuda **A** ve **B**. A ile B ayrı tarayıcı profillerinde (ya da biri telefonda) açık olmalı.
+
+0. **Şema:** `npx prisma db push` çalıştırın. Bu komut otomatik çalıştırılmadı; `.env`'deki veritabanında `PushSubscription` koleksiyonunu ve `endpoint` üzerindeki tekil indeksi oluşturur. `[ ] dev  [ ] prod`
+1. **Abone olma:** B sol çubuğun altında, tema düğmesinin üstündeki zil düğmesine basıp ("Bildirimleri aç") izin versin. Simge dolu zile dönmeli. MongoDB'de `PushSubscription` koleksiyonunda B'nin `profileId`'siyle bir kayıt olmalı. `p256dh` ve `auth` alanları base64url metni olmalı (`A–Z a–z 0–9 - _`); bozuk/ikili karakterler olmamalı (eskiden `TextDecoder` bozuyordu). Sayfayı yenileyin → zil hâlâ "Bildirimleri kapat" göstermeli. `[ ] dev  [ ] prod`
+2. **Bildirim ve tıklama:** B başka bir sayfaya (ör. bir kanala) geçsin ya da sekmeyi kapatsın. A, B'ye özel mesaj göndersin → B'ye başlığı A'nın adı, gövdesi mesajın ilk 120 karakteri olan bir bildirim gelmeli. Bildirime tıklayınca `/servers/<sunucu>/conversations/<A'nın üye kimliği>` açılmalı, yani A ile olan sohbet. Eski sabit Railway adresine gitmemeli. `[ ] dev  [ ] prod`
+3. **Sohbet açıkken bildirim yok:** B, A ile olan sohbeti açık tutsun. A mesaj göndersin → mesaj sohbete canlı gelmeli, **bildirim gelmemeli**. Not: Sohbet arka planda kalmış bir sekmede açıksa da bildirim gelmez (beklenen davranış: oda üyeliğine bakılıyor, sekmenin görünür olup olmadığına bakılmıyor). `[ ] dev  [ ] prod`
+4. **Abonelikten çıkma:** B zile tekrar bassın ("Bildirimleri kapat") → kayıt veritabanından silinmeli. A mesaj gönderince bildirim gelmemeli. `[ ] dev  [ ] prod`
+5. **İki cihaz:** B iki tarayıcıda (ya da bilgisayar + telefon) abone olsun → B'nin iki kaydı olmalı ve A'nın mesajı ikisine de bildirim olarak gitmeli. A da abone olsun; A'nın aboneliği B'ninkileri silmemeli (eskiden son abone herkesin yerine geçiyordu). `[ ] dev  [ ] prod`
+6. **Süresi dolan abonelik (İnceleme Odağı 5):** B'nin bir tarayıcısında site izinlerinden bildirim iznini kaldırın ya da site verilerini silin (uygulama içinden çıkmadan). A mesaj göndersin → mesaj normal gönderilmeli (200, sohbete düşmeli). Push servisi 404/410 dönerse o kayıt veritabanından silinmeli; sunucu konsolunda hata yığını olmamalı. Bazı tarayıcılar endpoint'i hemen geçersiz kılmaz; kayıt kalırsa bunu not edin, bu bir hata değil. `[ ] dev  [ ] prod`
+7. **Aynı tarayıcıda hesap değiştirme:** B abone olduğu tarayıcıda çıkış yapıp C ile girsin. Uygulama açıldığında mevcut abonelik C'ye bağlanmalı (kaydın `profileId`'si C olmalı). A'nın B'ye gönderdiği mesaj bu tarayıcıya **bildirim olarak gelmemeli**. Bilinen açık (F-43): C uygulamayı açmadan önce, yani yalnızca çıkış yapılmışken, B'nin bildirimleri bu tarayıcıya gelmeye devam eder. `[ ] dev  [ ] prod`
+8. **Herkese açık `sendNotification` kaldırıldı:** Tarayıcının Ağ sekmesinde zile basınca giden server action isteği (`Next-Action` başlığı) görülmeli. Sayfa kaynağında ya da JS paketinde `sendNotification` adlı bir action olmamalı. Oturumu kapalı bir pencereden aynı action isteği tekrarlanırsa kayıt oluşmamalı. `[ ] dev  [ ] prod`
+
+| Adım | dev | prod |
+|---|---|---|
+| 0 | [ ] | [ ] |
+| 1–3 | [ ] | [ ] |
+| 4–6 | [ ] | [ ] |
+| 7–8 | [ ] | [ ] |

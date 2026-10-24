@@ -122,3 +122,13 @@ export function closeChatRooms(chatIds: string[]): void {
     const rooms = chatIds.map(chatRoom);
     getIO()?.in(rooms).socketsLeave(rooms);
 }
+
+// Profilin bağlı socket'lerinden biri sohbetin odasında mı (sohbet bir sekmede açık mı)?
+export async function isProfileInChat(profileId: string, chatId: string): Promise<boolean> {
+    const io = getIO();
+    if (!io) {
+        return false;
+    }
+    const sockets = await io.in(chatRoom(chatId)).fetchSockets();
+    return sockets.some((socket) => socket.data.profileId === profileId);
+}

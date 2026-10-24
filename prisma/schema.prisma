@@ -5,8 +5,8 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
-  binaryTargets = ["native","linux-musl","linux-musl-openssl-3.0.x"]
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -25,6 +25,23 @@ model Profile {
   servers  Server[]
   members  Member[]
   channels Channel[]
+
+  pushSubscriptions PushSubscription[]
+}
+
+// Web Push aboneliği: bir tarayıcı (endpoint) bir profile bağlıdır.
+model PushSubscription {
+  id        String  @id @default(uuid()) @map("_id")
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  endpoint String @unique @db.String
+  p256dh   String @db.String
+  auth     String @db.String
+
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
 }
 
 model Server {
@@ -100,7 +117,7 @@ model Channel {
 }
 
 model Message {
-  id      String @id @default(uuid()) @map("_id")
+  id        String @id @default(uuid()) @map("_id")
   messageID String @default(uuid())
 
   content String @db.String
